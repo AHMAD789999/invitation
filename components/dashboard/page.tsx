@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { GuestManagement } from '@/components/dashboard/GuestManagement';
-
+import GuestManagement from "@/components/dashboard/GuestManagement";
 export default async function DashboardPage() {
   const supabase = await createClient();
 

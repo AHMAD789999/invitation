@@ -1,5 +1,4 @@
 'use client';
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Mesh, Plane, Program, Renderer, Texture, Transform } from 'ogl';
 
