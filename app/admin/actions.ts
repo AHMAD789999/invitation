@@ -1,10 +1,14 @@
 'use server';
 
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
 // Helper function to handle image uploads to Supabase Storage
-async function uploadImage(file: File, bucket: string, pathPrefix: string) {
+async function uploadImage(
+  file: File,
+  bucket: string,
+  pathPrefix: string
+) {
   if (!file || file.size === 0) return null;
 
   const supabase = await createClient();
@@ -16,14 +20,15 @@ async function uploadImage(file: File, bucket: string, pathPrefix: string) {
 
   const { data, error } = await supabase.storage
     .from(bucket)
-    .upload(fileName, file, { upsert: true });
+    .upload(fileName, file, {
+      upsert: true,
+    });
 
   if (error) {
     console.error('Error uploading image:', error);
     return null;
   }
 
-  // Get public URL or return path depending on your schema
   const { data: publicUrlData } = supabase.storage
     .from(bucket)
     .getPublicUrl(data.path);
@@ -33,7 +38,7 @@ async function uploadImage(file: File, bucket: string, pathPrefix: string) {
 
 export async function saveWeddingDetailsAction(formData: FormData) {
   const supabase = await createClient();
-  
+
   const weddingId = formData.get('wedding_id') as string;
   const groomName = formData.get('groom_name') as string;
   const brideName = formData.get('bride_name') as string;
@@ -41,13 +46,23 @@ export async function saveWeddingDetailsAction(formData: FormData) {
   const brideImageFile = formData.get('bride_image') as File | null;
 
   let groomImageUrl = null;
+
   if (groomImageFile && groomImageFile.size > 0 && weddingId) {
-    groomImageUrl = await uploadImage(groomImageFile, 'groom', `groom_${weddingId}`);
+    groomImageUrl = await uploadImage(
+      groomImageFile,
+      'groom',
+      `groom_${weddingId}`
+    );
   }
 
   let brideImageUrl = null;
+
   if (brideImageFile && brideImageFile.size > 0 && weddingId) {
-    brideImageUrl = await uploadImage(brideImageFile, 'bride', `bride_${weddingId}`);
+    brideImageUrl = await uploadImage(
+      brideImageFile,
+      'bride',
+      `bride_${weddingId}`
+    );
   }
 
   const updateData: Record<string, any> = {
@@ -56,8 +71,13 @@ export async function saveWeddingDetailsAction(formData: FormData) {
     updated_at: new Date().toISOString(),
   };
 
-  if (groomImageUrl) updateData.groom_image = groomImageUrl;
-  if (brideImageUrl) updateData.bride_image = brideImageUrl;
+  if (groomImageUrl) {
+    updateData.groom_image = groomImageUrl;
+  }
+
+  if (brideImageUrl) {
+    updateData.bride_image = brideImageUrl;
+  }
 
   const { error } = await supabase
     .from('weddings')
@@ -70,7 +90,10 @@ export async function saveWeddingDetailsAction(formData: FormData) {
   }
 
   revalidatePath('/dashboard');
-  return { success: true };
+
+  return {
+    success: true,
+  };
 }
 
 export async function addFamilyMemberAction(formData: FormData) {
@@ -82,9 +105,15 @@ export async function addFamilyMemberAction(formData: FormData) {
   const imageFile = formData.get('profile_image') as File | null;
 
   let profileImageUrl = null;
+
   if (imageFile && imageFile.size > 0 && weddingId) {
     const uniqueId = crypto.randomUUID();
-    profileImageUrl = await uploadImage(imageFile, 'family-members', `family_${weddingId}_${uniqueId}`);
+
+    profileImageUrl = await uploadImage(
+      imageFile,
+      'family-members',
+      `family_${weddingId}_${uniqueId}`
+    );
   }
 
   const { data, error } = await supabase
@@ -104,22 +133,27 @@ export async function addFamilyMemberAction(formData: FormData) {
   }
 
   revalidatePath('/dashboard');
-  return { success: true, data };
+
+  return {
+    success: true,
+    data,
+  };
 }
 
-export async function removeFamilyMemberAction(memberIdOrFormData: string | FormData) {
+export async function removeFamilyMemberAction(
+  memberIdOrFormData: string | FormData
+) {
   const supabase = await createClient();
-  
-  // Gracefully handles both direct string arguments and FormData submissions
-  const memberId = typeof memberIdOrFormData === 'string'
-    ? memberIdOrFormData
-    : memberIdOrFormData.get('memberId') as string;
+
+  const memberId =
+    typeof memberIdOrFormData === 'string'
+      ? memberIdOrFormData
+      : (memberIdOrFormData.get('memberId') as string);
 
   if (!memberId) {
     throw new Error('Family member ID is missing or invalid.');
   }
 
-  // Optional: Fetch member to delete associated image from storage first if needed
   const { data: member, error: fetchError } = await supabase
     .from('family_members')
     .select('profile_image')
@@ -127,7 +161,10 @@ export async function removeFamilyMemberAction(memberIdOrFormData: string | Form
     .single();
 
   if (fetchError) {
-    console.error('Error fetching family member for removal:', fetchError);
+    console.error(
+      'Error fetching family member for removal:',
+      fetchError
+    );
   }
 
   const { error: deleteError } = await supabase
@@ -136,10 +173,61 @@ export async function removeFamilyMemberAction(memberIdOrFormData: string | Form
     .eq('id', memberId);
 
   if (deleteError) {
-    console.error('Error deleting family member:', deleteError);
+    console.error(
+      'Error deleting family member:',
+      deleteError
+    );
+
     throw new Error(deleteError.message);
   }
 
   revalidatePath('/dashboard');
-  return { success: true };
+
+  return {
+    success: true,
+  };
+}
+
+/**
+ * Toggle user approval status from the admin portal.
+ */
+export async function toggleUserApprovalAction(
+  userId: string,
+  currentStatus: boolean
+) {
+  const supabase = await createClient();
+
+  if (!userId) {
+    throw new Error('User ID is missing.');
+  }
+
+  const { data: currentUser } = await supabase.auth.getUser();
+
+  if (!currentUser.user) {
+    throw new Error('You must be logged in.');
+  }
+
+  if (currentUser.user.email !== 'ahmaddeveloper0370@gmail.com') {
+    throw new Error('Unauthorized.');
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      is_approved: !currentStatus,
+    })
+    .eq('id', userId);
+
+  if (error) {
+    console.error('Error updating user approval:', error);
+    throw new Error(error.message);
+  }
+
+  revalidatePath('/admin');
+  revalidatePath('/dashboard');
+
+  return {
+    success: true,
+    is_approved: !currentStatus,
+  };
 }
