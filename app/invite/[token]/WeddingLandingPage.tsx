@@ -1,43 +1,136 @@
-// app/invite/[token]/WeddingLandingPage.jsx
+// app/invite/[token]/WeddingLandingPage.tsx
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-export default function WeddingLandingPage({ guest, familyMembers = [] }) {
-  const [stage, setStage] = useState('intro');
+// ==================== TYPES ====================
+interface Wedding {
+  id?: string;
+  groom_name?: string;
+  bride_name?: string;
+  groom_image?: string;
+  bride_image?: string;
+  mehndi_date?: string;
+  mehndi_time?: string;
+  mehndi_venue?: string;
+  mehndi_map_url?: string;
+  barat_date?: string;
+  barat_time?: string;
+  barat_venue?: string;
+  barat_map_url?: string;
+  walima_date?: string;
+  walima_time?: string;
+  walima_venue?: string;
+  walima_map_url?: string;
+  contact_person_1?: string;
+  contact_number_1?: string;
+  contact_person_2?: string;
+  contact_number_2?: string;
+}
+
+interface Guest {
+  id: string;
+  name?: string;
+  title_prefix?: string;
+  allowed_guests?: number;
+  invited_events?: string[];
+  personal_message?: string;
+  token?: string;
+  rsvp_status?: 'pending' | 'attending' | 'not_attending' | 'maybe';
+  rsvp_updated_at?: string;
+  wedding?: Wedding;
+}
+
+interface FamilyMember {
+  id: string;
+  name: string;
+  profile_image?: string;
+  role?: string;
+  created_at?: string;
+}
+
+interface Ayat {
+  arabic: string;
+  translation: string;
+  reference: string;
+}
+
+interface EventItem {
+  id: string;
+  name: string;
+  emoji: string;
+  video: string;
+  color: 'amber' | 'rose' | 'emerald';
+  date?: string;
+  time?: string;
+  venue?: string;
+  mapLink?: string;
+  ref: React.RefObject<HTMLVideoElement | null>;
+  watched: boolean;
+  setWatched: React.Dispatch<React.SetStateAction<boolean>>;
+  invitedKey: string;
+  ayat: Ayat;
+}
+
+interface WeddingLandingPageProps {
+  guest: Guest;
+  familyMembers?: FamilyMember[];
+}
+
+interface ColorScheme {
+  border: string;
+  text: string;
+  textLight: string;
+  bg: string;
+  bgHover: string;
+  borderBtn: string;
+}
+
+// ==================== MAIN COMPONENT ====================
+export default function WeddingLandingPage({
+  guest,
+  familyMembers = [],
+}: WeddingLandingPageProps) {
+  const [stage, setStage] = useState<'intro' | 'unlocked'>('intro');
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
 
-  const [rsvpStatus, setRsvpStatus] = useState(guest?.rsvp_status || 'pending');
+  const [rsvpStatus, setRsvpStatus] = useState<
+    'pending' | 'attending' | 'not_attending' | 'maybe'
+  >(guest?.rsvp_status || 'pending');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const introVideoRef = useRef(null);
-  const mehndiVideoRef = useRef(null);
-  const baratVideoRef = useRef(null);
-  const walimaVideoRef = useRef(null);
+  const introVideoRef = useRef<HTMLVideoElement | null>(null);
+  const mehndiVideoRef = useRef<HTMLVideoElement | null>(null);
+  const baratVideoRef = useRef<HTMLVideoElement | null>(null);
+  const walimaVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const [mehndiWatched, setMehndiWatched] = useState(false);
   const [baratWatched, setBaratWatched] = useState(false);
   const [walimaWatched, setWalimaWatched] = useState(false);
 
-  const [activeEventId, setActiveEventId] = useState(null);
+  const [activeEventId, setActiveEventId] = useState<string | null>(null);
 
   // ==================== DYNAMIC DATA ====================
-  const guestName = guest?.name || "Valued Guest";
-  const guestTitle = guest?.title_prefix || "";
-  const personalMessage = guest?.personal_message || "";
+  const guestName = guest?.name || 'Valued Guest';
+  const guestTitle = guest?.title_prefix || '';
+  const personalMessage = guest?.personal_message || '';
   const allowedGuests = guest?.allowed_guests || 1;
-  const invitedEvents = guest?.invited_events || ['Mehndi', 'Barat', 'Walima'];
+  const invitedEvents: string[] = guest?.invited_events || [
+    'Mehndi',
+    'Barat',
+    'Walima',
+  ];
 
-  const wedding = guest?.wedding || {};
-  const groomName = wedding.groom_name || "Groom";
-  const brideName = wedding.bride_name || "Bride";
+  const wedding: Wedding = guest?.wedding || {};
+  const groomName = wedding.groom_name || 'Groom';
+  const brideName = wedding.bride_name || 'Bride';
   const groomImage = wedding.groom_image || null;
   const brideImage = wedding.bride_image || null;
 
   // ==================== ALL EVENTS ====================
-  const allEvents = [
+  const allEvents: EventItem[] = [
     {
       id: 'mehndi',
       name: 'Mehndi Celebration',
@@ -52,10 +145,11 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
       watched: mehndiWatched,
       setWatched: setMehndiWatched,
       invitedKey: 'Mehndi',
-      // Mehndi ke liye ayat (Baraqah / Khushi)
       ayat: {
-        arabic: 'وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً',
-        translation: 'And among His signs is that He created for you mates from among yourselves, that you may dwell in tranquility with them, and He has put love and mercy between your hearts.',
+        arabic:
+          'وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً',
+        translation:
+          'And among His signs is that He created for you mates from among yourselves, that you may dwell in tranquility with them, and He has put love and mercy between your hearts.',
         reference: 'Surah Ar-Rum 30:21',
       },
     },
@@ -73,10 +167,11 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
       watched: baratWatched,
       setWatched: setBaratWatched,
       invitedKey: 'Barat',
-      // Barat / Nikkah ke liye ayat (Nikah ki dua)
       ayat: {
-        arabic: 'بَارَكَ اللَّهُ لَكَ وَبَارَكَ عَلَيْكَ وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
-        translation: 'May Allah bless you, and shower His blessings upon you, and join you together in goodness.',
+        arabic:
+          'بَارَكَ اللَّهُ لَكَ وَبَارَكَ عَلَيْكَ وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
+        translation:
+          'May Allah bless you, and shower His blessings upon you, and join you together in goodness.',
         reference: 'Sunan Abu Dawud 2130',
       },
     },
@@ -94,28 +189,28 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
       watched: walimaWatched,
       setWatched: setWalimaWatched,
       invitedKey: 'Walima',
-      // Walima ke liye ayat (Shukr / Daawat)
       ayat: {
-        arabic: 'وَإِذَا حُيِّيتُم بِتَحِيَّةٍ فَحَيُّوا بِأَحْسَنَ مِنْهَا أَوْ رُدُّوهَا',
-        translation: 'And when you are greeted with a greeting, greet with a better greeting or return it. Indeed Allah is ever, over all things, an Accountant.',
+        arabic:
+          'وَإِذَا حُيِّيتُم بِتَحِيَّةٍ فَحَيُّوا بِأَحْسَنَ مِنْهَا أَوْ رُدُّوهَا',
+        translation:
+          'And when you are greeted with a greeting, greet with a better greeting or return it. Indeed Allah is ever, over all things, an Accountant.',
         reference: 'Surah An-Nisa 4:86',
       },
     },
   ];
 
-  // ============================================================
-  // FILTER: Only show events the guest is INVITED to
-  // ============================================================
-  const invitedEventsNormalized = (invitedEvents || []).map((e) =>
+  // ==================== FILTER ====================
+  const invitedEventsNormalized = (invitedEvents || []).map((e: string) =>
     String(e).toLowerCase().trim()
   );
 
-  const events = allEvents.filter((e) => {
+  const events = allEvents.filter((e: EventItem) => {
     if (invitedEventsNormalized.length === 0) return true;
     return invitedEventsNormalized.includes(e.invitedKey.toLowerCase());
   });
 
-  const colorMap = {
+  // ==================== COLOR MAP ====================
+  const colorMap: Record<string, ColorScheme> = {
     amber: {
       border: 'border-amber-400/30',
       text: 'text-amber-400',
@@ -159,15 +254,15 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
     if (stage !== 'unlocked') return;
     if (events.length === 0) return;
 
-    const observers = [];
+    const observers: IntersectionObserver[] = [];
 
-    events.forEach((event) => {
+    events.forEach((event: EventItem) => {
       const section = document.getElementById(`event-${event.id}`);
       if (!section) return;
 
       const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
+        (entries: IntersectionObserverEntry[]) => {
+          entries.forEach((entry: IntersectionObserverEntry) => {
             const video = event.ref.current;
             if (!video) return;
 
@@ -178,7 +273,7 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
                 video.muted = false;
                 video.play().catch(() => {
                   video.muted = true;
-                  video.play().catch((err) => console.log('Autoplay failed:', err));
+                  video.play().catch((err: unknown) => console.log('Autoplay failed:', err));
                 });
               }
             }
@@ -192,12 +287,12 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
     });
 
     return () => {
-      observers.forEach((obs) => obs.disconnect());
+      observers.forEach((obs: IntersectionObserver) => obs.disconnect());
     };
   }, [stage, mehndiWatched, baratWatched, walimaWatched, events.length]);
 
   // ==================== HANDLERS ====================
-  const handleIntroPlay = () => {
+  const handleIntroPlay = (): void => {
     if (introVideoRef.current && !videoError) {
       if (isPlaying) {
         introVideoRef.current.pause();
@@ -209,12 +304,14 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
     }
   };
 
-  const handleVideoEnded = useCallback((event) => {
+  const handleVideoEnded = useCallback((event: EventItem): void => {
     event.setWatched(true);
     setActiveEventId(null);
   }, []);
 
-  const handleRsvpSubmit = async (status) => {
+  const handleRsvpSubmit = async (
+    status: 'attending' | 'not_attending' | 'maybe'
+  ): Promise<void> => {
     setIsSubmitting(true);
     try {
       const response = await fetch('/api/rsvp', {
@@ -229,12 +326,58 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
       if (response.ok) {
         setRsvpStatus(status);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error updating RSVP:', err);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const generateCalendarLink = (
+    eventTitle: string,
+    date: string | undefined,
+    time: string | undefined,
+    venue: string | undefined
+  ): string => {
+    if (!date) return '#';
+    const dateObj = new Date(`${date}T${time || '12:00'}`);
+    const dateStr =
+      dateObj.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const endDate = new Date(dateObj.getTime() + 4 * 60 * 60 * 1000);
+    const endDateStr =
+      endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+      eventTitle
+    )}&dates=${dateStr}/${endDateStr}&details=${encodeURIComponent(
+      `Wedding Celebration at ${venue || ''}`
+    )}&location=${encodeURIComponent(venue || '')}`;
+  };
+
+  const formatDate = (dateStr: string | undefined): string => {
+    if (!dateStr) return 'Date TBA';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const scrollToSection = (id: string): void => {
+    setActiveTab(id);
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const hasFamilyMembers = familyMembers && familyMembers.length > 0;
 
   // ==================== RSVP MESSAGES ====================
   const getRsvpMessage = () => {
@@ -284,44 +427,13 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
 
   const rsvpMessage = getRsvpMessage();
 
-  const generateCalendarLink = (eventTitle, date, time, venue) => {
-    if (!date) return '#';
-    const dateObj = new Date(`${date}T${time || '12:00'}`);
-    const dateStr = dateObj.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const endDate = new Date(dateObj.getTime() + 4 * 60 * 60 * 1000);
-    const endDateStr = endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventTitle)}&dates=${dateStr}/${endDateStr}&details=${encodeURIComponent(`Wedding Celebration at ${venue || ''}`)}&location=${encodeURIComponent(venue || '')}`;
-  };
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'Date TBA';
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateStr;
-    }
-  };
-
-  const scrollToSection = (id) => {
-    setActiveTab(id);
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  const hasFamilyMembers = familyMembers && familyMembers.length > 0;
-
+  // ==================== RENDER ====================
   return (
-    <main className={`relative w-full min-h-screen bg-black text-white overflow-x-hidden selection:bg-rose-100 selection:text-rose-900 font-sans ${stage !== 'intro' ? 'pb-24' : ''}`}>
-
+    <main
+      className={`relative w-full min-h-screen bg-black text-white overflow-x-hidden selection:bg-rose-100 selection:text-rose-900 font-sans ${
+        stage !== 'intro' ? 'pb-24' : ''
+      }`}
+    >
       {/* ==================== INTRO GATE ==================== */}
       {stage === 'intro' && (
         <div
@@ -330,9 +442,11 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
         >
           {videoError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 p-6 text-center">
-              <p className="text-sm text-zinc-400 mb-4 font-light">Cinematic intro unavailable</p>
+              <p className="text-sm text-zinc-400 mb-4 font-light">
+                Cinematic intro unavailable
+              </p>
               <button
-                onClick={(e) => {
+                onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                   e.stopPropagation();
                   setStage('unlocked');
                 }}
@@ -376,7 +490,10 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
       )}
 
       {/* ==================== HERO SECTION ==================== */}
-      <section id="home" className="relative w-full h-screen flex flex-col justify-between overflow-hidden">
+      <section
+        id="home"
+        className="relative w-full h-screen flex flex-col justify-between overflow-hidden"
+      >
         <div className="absolute inset-0 w-full h-full z-0">
           <video
             src="https://pub-4dc8201144ca418fb604349c73e8c724.r2.dev/Newbeautifulvideo.mp4"
@@ -405,7 +522,8 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
             </p>
 
             <blockquote className="text-[11px] italic text-zinc-300 max-w-xs mx-auto leading-relaxed font-light drop-shadow">
-              &quot;And He placed between you affection and mercy. Indeed in that are signs for a people who give thought.&quot;{" "}
+              &quot;And He placed between you affection and mercy. Indeed in that
+              are signs for a people who give thought.&quot;{' '}
               <span className="not-italic text-[10px] block mt-1 font-medium text-rose-300">
                 (Surah Ar-Rum: 21)
               </span>
@@ -415,13 +533,21 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
               <div className="flex items-center justify-center gap-4 pt-2">
                 {groomImage && (
                   <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
-                    <img src={groomImage} alt={groomName} className="w-full h-full object-cover" />
+                    <img
+                      src={groomImage}
+                      alt={groomName}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 )}
                 <span className="text-2xl text-rose-400 font-serif">&</span>
                 {brideImage && (
                   <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
-                    <img src={brideImage} alt={brideName} className="w-full h-full object-cover" />
+                    <img
+                      src={brideImage}
+                      alt={brideName}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 )}
               </div>
@@ -443,7 +569,8 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
                 Wedding Celebration
               </span>
               <h1 className="text-3xl md:text-4xl font-serif text-white tracking-tight drop-shadow-lg capitalize">
-                {groomName} <span className="text-rose-400 font-light">&</span> {brideName}
+                {groomName}{' '}
+                <span className="text-rose-400 font-light">&</span> {brideName}
               </h1>
               {allowedGuests > 1 && (
                 <p className="text-[10px] text-rose-200/70 uppercase tracking-widest pt-1">
@@ -472,7 +599,7 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
             <p className="text-zinc-400 text-sm">No events configured yet.</p>
           </div>
         ) : (
-          events.map((event, idx) => {
+          events.map((event: EventItem, idx: number) => {
             const colors = colorMap[event.color];
             const isPlayingThis = activeEventId === event.id;
             const isWatched = event.watched;
@@ -491,15 +618,23 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
                   preload="auto"
                   controls={false}
                   onEnded={() => handleVideoEnded(event)}
-                  onContextMenu={(e) => e.preventDefault()}
+                  onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
+                    e.preventDefault()
+                  }
                 />
 
                 {isPlayingThis && !isWatched && (
                   <div
                     className="absolute inset-0 z-30 cursor-not-allowed"
-                    onContextMenu={(e) => e.preventDefault()}
-                    onTouchMove={(e) => e.preventDefault()}
-                    onWheel={(e) => e.preventDefault()}
+                    onContextMenu={(e: React.MouseEvent<HTMLDivElement>) =>
+                      e.preventDefault()
+                    }
+                    onTouchMove={(e: React.TouchEvent<HTMLDivElement>) =>
+                      e.preventDefault()
+                    }
+                    onWheel={(e: React.WheelEvent<HTMLDivElement>) =>
+                      e.preventDefault()
+                    }
                   />
                 )}
 
@@ -525,47 +660,57 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
 
                     <div className="space-y-2 bg-white/5 p-3.5 rounded-2xl border border-white/10 mb-3">
                       <p className="text-xs text-zinc-200">
-                        📅 <strong className="text-white">{formatDate(event.date)}</strong>
+                        📅{' '}
+                        <strong className="text-white">
+                          {formatDate(event.date)}
+                        </strong>
                         {event.time && (
                           <>
-                            {" "}| ⏰ <strong className="text-white">{event.time}</strong>
+                            {' '}
+                            | ⏰{' '}
+                            <strong className="text-white">{event.time}</strong>
                           </>
                         )}
                       </p>
                       {event.venue && (
-                        <p className="text-xs text-zinc-300">📍 {event.venue}</p>
+                        <p className="text-xs text-zinc-300">
+                          📍 {event.venue}
+                        </p>
                       )}
                     </div>
 
-                    {/* ============ AYAT (Quranic Verse) ============ */}
+                    {/* AYAT */}
                     {event.ayat && (
                       <div
                         className={`relative p-4 rounded-2xl ${colors.bg} border ${colors.border} mb-3 overflow-hidden`}
                       >
-                        {/* Decorative corner */}
-                        <div className={`absolute top-0 right-0 w-16 h-16 ${colors.bg} rounded-full blur-2xl opacity-50`}></div>
+                        <div
+                          className={`absolute top-0 right-0 w-16 h-16 ${colors.bg} rounded-full blur-2xl opacity-50`}
+                        ></div>
 
                         <div className="relative z-10">
                           <p className="text-[9px] uppercase tracking-widest text-white/60 font-bold mb-2 flex items-center gap-1.5">
                             <span>🕌</span> Blessing
                           </p>
 
-                          {/* Arabic Ayat */}
                           <p
                             className="text-right text-base sm:text-lg text-white font-serif leading-loose mb-3"
                             dir="rtl"
-                            style={{ fontFamily: '"Amiri", "Traditional Arabic", serif' }}
+                            style={{
+                              fontFamily:
+                                '"Amiri", "Traditional Arabic", serif',
+                            }}
                           >
                             {event.ayat.arabic}
                           </p>
 
-                          {/* Translation */}
                           <p className="text-[10px] italic text-white/80 leading-relaxed mb-1">
                             &quot;{event.ayat.translation}&quot;
                           </p>
 
-                          {/* Reference */}
-                          <p className={`text-[9px] font-bold ${colors.textLight} text-right`}>
+                          <p
+                            className={`text-[9px] font-bold ${colors.textLight} text-right`}
+                          >
                             — {event.ayat.reference}
                           </p>
                         </div>
@@ -602,8 +747,8 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
 
                     <p className="text-center text-[10px] text-zinc-400 mt-4 uppercase tracking-widest animate-pulse">
                       {idx < events.length - 1
-                        ? "Scroll down for next event ↓"
-                        : "Scroll down to RSVP ↓"}
+                        ? 'Scroll down for next event ↓'
+                        : 'Scroll down to RSVP ↓'}
                     </p>
                   </div>
                 )}
@@ -622,10 +767,18 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
                 {groomImage && (
                   <div className="text-center">
                     <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
-                      <img src={groomImage} alt={groomName} className="w-full h-full object-cover" />
+                      <img
+                        src={groomImage}
+                        alt={groomName}
+                        className="w-full h-full object-cover"
+                      />
                     </div>
-                    <p className="text-xs font-semibold text-white capitalize">{groomName}</p>
-                    <p className="text-[9px] text-rose-300 uppercase tracking-widest">Groom</p>
+                    <p className="text-xs font-semibold text-white capitalize">
+                      {groomName}
+                    </p>
+                    <p className="text-[9px] text-rose-300 uppercase tracking-widest">
+                      Groom
+                    </p>
                   </div>
                 )}
 
@@ -634,10 +787,18 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
                 {brideImage && (
                   <div className="text-center">
                     <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
-                      <img src={brideImage} alt={brideName} className="w-full h-full object-cover" />
+                      <img
+                        src={brideImage}
+                        alt={brideName}
+                        className="w-full h-full object-cover"
+                      />
                     </div>
-                    <p className="text-xs font-semibold text-white capitalize">{brideName}</p>
-                    <p className="text-[9px] text-rose-300 uppercase tracking-widest">Bride</p>
+                    <p className="text-xs font-semibold text-white capitalize">
+                      {brideName}
+                    </p>
+                    <p className="text-[9px] text-rose-300 uppercase tracking-widest">
+                      Bride
+                    </p>
                   </div>
                 )}
               </div>
@@ -645,11 +806,13 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
 
             <div className="text-center mb-6">
               <h3 className="text-xl font-serif text-white mb-1">Our Family</h3>
-              <p className="text-xs text-zinc-400">The people who make it special</p>
+              <p className="text-xs text-zinc-400">
+                The people who make it special
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              {familyMembers.map((member) => (
+              {familyMembers.map((member: FamilyMember) => (
                 <div
                   key={member.id}
                   className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/10 text-center"
@@ -665,7 +828,7 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
                   ) : (
                     <div className="w-16 h-16 rounded-full bg-gradient-to-br from-rose-500/30 to-pink-600/30 border-2 border-rose-400/30 flex items-center justify-center mb-2">
                       <span className="text-lg font-bold text-rose-200">
-                        {member.name?.charAt(0).toUpperCase() || "?"}
+                        {member.name?.charAt(0).toUpperCase() || '?'}
                       </span>
                     </div>
                   )}
@@ -690,7 +853,9 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
         <div className="w-full max-w-md mx-auto px-4 py-8">
           <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
             <h3 className="text-xl font-serif text-white mb-1">Contact Us</h3>
-            <p className="text-xs text-zinc-400 mb-4">Reach out for any assistance</p>
+            <p className="text-xs text-zinc-400 mb-4">
+              Reach out for any assistance
+            </p>
 
             <div className="space-y-3">
               {wedding.contact_person_1 && wedding.contact_number_1 && (
@@ -725,14 +890,16 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
         </div>
       )}
 
-      {/* ==================== RSVP SECTION (with dynamic messages) ==================== */}
+      {/* ==================== RSVP SECTION ==================== */}
       <div id="rsvp" className="w-full max-w-md mx-auto px-4 py-4 mb-16">
         <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
-
-          {/* Dynamic message based on RSVP status */}
-          <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rsvpMessage.gradient} border ${rsvpMessage.border} p-5 mb-5`}>
+          <div
+            className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rsvpMessage.gradient} border ${rsvpMessage.border} p-5 mb-5`}
+          >
             <div className="text-4xl mb-2">{rsvpMessage.emoji}</div>
-            <h3 className={`text-lg font-serif ${rsvpMessage.textColor} mb-0.5`}>
+            <h3
+              className={`text-lg font-serif ${rsvpMessage.textColor} mb-0.5`}
+            >
               {rsvpMessage.title}
             </h3>
             <p className="text-[10px] uppercase tracking-widest text-white/60 mb-3">
@@ -742,27 +909,34 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
               {rsvpMessage.message}
             </p>
 
-            {/* Decorative dua for attending */}
             {rsvpStatus === 'attending' && (
-              <p className="text-[10px] text-emerald-300/80 mt-3 font-serif" dir="rtl">
+              <p
+                className="text-[10px] text-emerald-300/80 mt-3 font-serif"
+                dir="rtl"
+              >
                 بَارَكَ اللَّهُ لَكُمْ وَبَارَكَ عَلَيْكُمْ
               </p>
             )}
 
-            {/* Decorative dua for not attending */}
             {rsvpStatus === 'not_attending' && (
-              <p className="text-[10px] text-rose-300/80 mt-3 font-serif" dir="rtl">
+              <p
+                className="text-[10px] text-rose-300/80 mt-3 font-serif"
+                dir="rtl"
+              >
                 جَزَاكَ اللَّهُ خَيْرًا
               </p>
             )}
           </div>
 
-          {/* Only show action buttons if pending OR to allow change */}
           {rsvpStatus === 'pending' && (
             <>
-              <h3 className="text-base font-serif text-white mb-1">Confirm Attendance</h3>
+              <h3 className="text-base font-serif text-white mb-1">
+                Confirm Attendance
+              </h3>
               <p className="text-xs text-zinc-400 mb-5">
-                {`Please respond to help us arrange your seat${allowedGuests > 1 ? ` for ${allowedGuests} guests` : ''}`}
+                {`Please respond to help us arrange your seat${
+                  allowedGuests > 1 ? ` for ${allowedGuests} guests` : ''
+                }`}
               </p>
 
               <div className="space-y-3">
@@ -785,7 +959,6 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
             </>
           )}
 
-          {/* If already responded, show option to change */}
           {rsvpStatus !== 'pending' && (
             <button
               onClick={() => setRsvpStatus('pending')}
@@ -803,7 +976,8 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
           {groomName} & {brideName} • {new Date().getFullYear()}
         </p>
         <p className="text-[10px] text-rose-300 font-semibold mt-1 flex items-center justify-center gap-1">
-          <span>Made with</span> <span className="text-rose-400 animate-pulse">❤️</span>{" "}
+          <span>Made with</span>{' '}
+          <span className="text-rose-400 animate-pulse">❤️</span>{' '}
           <span>for Loved Ones</span>
         </p>
       </footer>
@@ -814,43 +988,59 @@ export default function WeddingLandingPage({ guest, familyMembers = [] }) {
           <button
             onClick={() => scrollToSection('home')}
             className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-              activeTab === 'home' ? 'text-rose-400 bg-white/10' : 'text-zinc-400 hover:text-white'
+              activeTab === 'home'
+                ? 'text-rose-400 bg-white/10'
+                : 'text-zinc-400 hover:text-white'
             }`}
           >
             <span className="text-base">🏠</span>
-            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">Home</span>
+            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
+              Home
+            </span>
           </button>
 
           <button
             onClick={() => scrollToSection('events')}
             className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-              activeTab === 'events' ? 'text-rose-400 bg-white/10' : 'text-zinc-400 hover:text-white'
+              activeTab === 'events'
+                ? 'text-rose-400 bg-white/10'
+                : 'text-zinc-400 hover:text-white'
             }`}
           >
             <span className="text-base">🎥</span>
-            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">Events</span>
+            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
+              Events
+            </span>
           </button>
 
           {hasFamilyMembers && (
             <button
               onClick={() => scrollToSection('family')}
               className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-                activeTab === 'family' ? 'text-rose-400 bg-white/10' : 'text-zinc-400 hover:text-white'
+                activeTab === 'family'
+                  ? 'text-rose-400 bg-white/10'
+                  : 'text-zinc-400 hover:text-white'
               }`}
             >
               <span className="text-base">👨‍👩‍👧</span>
-              <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">Family</span>
+              <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
+                Family
+              </span>
             </button>
           )}
 
           <button
             onClick={() => scrollToSection('rsvp')}
             className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-              activeTab === 'rsvp' ? 'text-rose-400 bg-white/10' : 'text-zinc-400 hover:text-white'
+              activeTab === 'rsvp'
+                ? 'text-rose-400 bg-white/10'
+                : 'text-zinc-400 hover:text-white'
             }`}
           >
             <span className="text-base">✨</span>
-            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">RSVP</span>
+            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
+              RSVP
+            </span>
           </button>
         </div>
       )}

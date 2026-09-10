@@ -9,11 +9,18 @@ interface PageProps {
   }>;
 }
 
+interface FamilyMemberRow {
+  id: string;
+  name: string;
+  profile_image?: string;
+  role?: string;
+  created_at?: string;
+}
+
 export default async function InvitationPage({ params }: PageProps) {
   const { token } = await params;
   const supabase = await createClient();
 
-  // 1. Fetch guest + wedding details
   const { data: guest, error } = await supabase
     .from('guests')
     .select(`
@@ -57,9 +64,8 @@ export default async function InvitationPage({ params }: PageProps) {
     notFound();
   }
 
-  // 2. Fetch family members from separate table
-  const weddingId = (guest.wedding as any)?.id;
-  let familyMembers: any[] = [];
+  const weddingId = (guest.wedding as { id?: string } | null)?.id;
+  let familyMembers: FamilyMemberRow[] = [];
 
   if (weddingId) {
     const { data: familyData, error: familyError } = await supabase
@@ -69,7 +75,7 @@ export default async function InvitationPage({ params }: PageProps) {
       .order('created_at', { ascending: true });
 
     if (!familyError && familyData) {
-      familyMembers = familyData;
+      familyMembers = familyData as FamilyMemberRow[];
     }
   }
 
