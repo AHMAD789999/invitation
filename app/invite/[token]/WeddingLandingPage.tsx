@@ -260,8 +260,39 @@ export default function WeddingLandingPage({
     },
   };
 
+  // ==================== INTRO VIDEO — FAST + 1.5x SPEED ====================
+  useEffect(() => {
+    if (stage !== 'intro') return;
+    const video = introVideoRef.current;
+    if (!video) return;
+
+    // Speed up intro so users get in faster
+    video.playbackRate = 1.5;
+
+    // Try autoplay muted first (browsers allow this), then unmute
+    video.muted = true;
+    const tryPlay = video.play();
+    if (tryPlay && typeof tryPlay.catch === 'function') {
+      tryPlay
+        .then(() => {
+          setIsPlaying(true);
+          // Try to unmute after play starts
+          setTimeout(() => {
+            if (video) {
+              video.muted = false;
+            }
+          }, 300);
+        })
+        .catch(() => {
+          // Autoplay blocked — wait for user tap
+          setIsPlaying(false);
+        });
+    }
+  }, [stage]);
+
   // ==================== SCROLL LOCK ====================
   useEffect(() => {
+    // Only lock scroll during intro if user hasn't started scrolling yet
     const shouldLock = stage === 'intro' || activeEventId !== null;
     document.body.style.overflow = shouldLock ? 'hidden' : 'auto';
     document.documentElement.style.overflow = shouldLock ? 'hidden' : 'auto';
@@ -292,11 +323,12 @@ export default function WeddingLandingPage({
             if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
               if (!event.watched) {
                 setActiveEventId(event.id);
-                // Fast start — skip to start and play immediately
                 try {
                   video.currentTime = 0;
                 } catch {}
                 video.muted = false;
+                // Events play slightly faster too so users don't wait long
+                video.playbackRate = 1.25;
                 const p = video.play();
                 if (p && typeof p.catch === 'function') {
                   p.catch(() => {
@@ -306,14 +338,12 @@ export default function WeddingLandingPage({
                 }
               }
             } else if (!entry.isIntersecting && activeEventId === event.id) {
-              // Pause when scrolled away to free resources
               try {
                 video.pause();
               } catch {}
             }
           });
         },
-        // Lower threshold so it triggers faster, plus rootMargin to pre-trigger
         { threshold: [0.3, 0.5, 0.7], rootMargin: '0px 0px -10% 0px' }
       );
 
@@ -333,11 +363,25 @@ export default function WeddingLandingPage({
         introVideoRef.current.pause();
         setIsPlaying(false);
       } else {
-        const p = introVideoRef.current.play();
+        const video = introVideoRef.current;
+        video.playbackRate = 1.5;
+        video.muted = false;
+        const p = video.play();
         if (p && typeof p.catch === 'function') p.catch(() => setVideoError(true));
         setIsPlaying(true);
       }
     }
+  };
+
+  // User can skip intro anytime — tap "Skip" button
+  const handleSkipIntro = (e: React.MouseEvent<HTMLButtonElement>): void => {
+    e.stopPropagation();
+    if (introVideoRef.current) {
+      try {
+        introVideoRef.current.pause();
+      } catch {}
+    }
+    setStage('unlocked');
   };
 
   const handleVideoEnded = useCallback((event: EventItem): void => {
@@ -349,9 +393,8 @@ export default function WeddingLandingPage({
     status: 'attending' | 'not_attending' | 'maybe'
   ): Promise<void> => {
     setIsSubmitting(true);
-    // Optimistic update — feels instant
     const prev = rsvpStatus;
-    setRsvpStatus(status);
+    setRsvpStatus(status); // optimistic
     try {
       const response = await fetch('/api/rsvp', {
         method: 'POST',
@@ -483,10 +526,7 @@ export default function WeddingLandingPage({
                 Cinematic intro unavailable
               </p>
               <button
-                onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  e.stopPropagation();
-                  setStage('unlocked');
-                }}
+                onClick={handleSkipIntro}
                 className="px-8 py-3.5 rounded-full bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-semibold uppercase tracking-[0.2em] shadow-2xl"
               >
                 Skip Intro & Enter Invitation
@@ -499,10 +539,19 @@ export default function WeddingLandingPage({
               className="w-full h-full object-cover"
               playsInline
               preload="auto"
+              muted
               onError={() => setVideoError(true)}
               onEnded={() => setStage('unlocked')}
             />
           )}
+
+          {/* Skip Intro button — always available, top-right */}
+          <button
+            onClick={handleSkipIntro}
+            className="absolute top-6 right-6 z-[70] px-4 py-2 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-black/80 transition-all shadow-xl"
+          >
+            Skip ⏭
+          </button>
 
           <div className="absolute inset-x-6 bottom-12 z-50 pointer-events-none flex justify-center">
             <div className="relative inline-block max-w-xs w-full bg-black/60 backdrop-blur-xl border border-rose-300/30 rounded-2xl px-5 py-3 text-center shadow-2xl ring-1 ring-white/15">
@@ -652,7 +701,7 @@ export default function WeddingLandingPage({
                 id={`event-${event.id}`}
                 className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
               >
-                {/* ===== FULL SCREEN VIDEO — lazy, fast start ===== */}
+                {/* ===== FULL SCREEN VIDEO ===== */}
                 <video
                   ref={event.ref}
                   src={event.video}
@@ -666,7 +715,7 @@ export default function WeddingLandingPage({
                   }
                 />
 
-                {/* ===== CINEMATIC OVERLAYS (lighter) ===== */}
+                {/* ===== CINEMATIC OVERLAYS ===== */}
                 <div className="absolute inset-0 z-[1] pointer-events-none">
                   <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
                   <div className="absolute bottom-0 inset-x-0 h-56 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
