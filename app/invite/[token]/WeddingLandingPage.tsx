@@ -608,12 +608,12 @@ export default function WeddingLandingPage({
               <section
                 key={event.id}
                 id={`event-${event.id}`}
-                className="relative top-[-60px] w-full h-screen overflow-hidden bg-black border-b border-white/10"
+                className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
               >
                 <video
                   ref={event.ref}
                   src={event.video}
-                  className="absolute inset-0 top-[-60px] w-full h-full object-cover z-0"
+                  className="absolute inset-0 top-[-260px] w-full h-full object-cover z-0"
                   playsInline
                   preload="auto"
                   controls={false}
