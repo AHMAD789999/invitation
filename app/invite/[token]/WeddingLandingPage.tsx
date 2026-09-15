@@ -613,7 +613,7 @@ export default function WeddingLandingPage({
                 <video
                   ref={event.ref}
                   src={event.video}
-                  className="absolute inset-0 top-[-90px] w-full h-full object-cover z-0"
+                  className="absolute inset-0 top-[-80px] w-full h-full object-cover z-0"
                   playsInline
                   preload="auto"
                   controls={false}
@@ -638,7 +638,7 @@ export default function WeddingLandingPage({
                   />
                 )}
 
-                <div className="absolute top-6 inset-x-0 z-20 text-center px-4 pointer-events-none">
+                <div className="absolute top-[-50px] inset-x-0 z-20 text-center px-4 pointer-events-none">
                   <span
                     className={`text-[9px] uppercase tracking-[0.3em] ${colors.text} font-bold bg-black/70 px-4 py-1.5 rounded-full border ${colors.border} backdrop-blur-md shadow-xl`}
                   >
@@ -647,7 +647,7 @@ export default function WeddingLandingPage({
                 </div>
 
                 {isWatched && (
-                  <div className="absolute bottom-0 inset-x-0 z-40 p-5 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-fade-in max-w-md mx-auto w-full max-h-[85vh] overflow-y-auto">
+                  <div className="absolute bottom-50 inset-x-0 z-40 p-5 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-fade-in max-w-md mx-auto w-full max-h-[85vh] overflow-y-auto">
                     <span
                       className={`text-[9px] uppercase tracking-widest ${colors.text} font-bold ${colors.bg} px-3 py-1 rounded-full border ${colors.border} inline-block mb-3`}
                     >
