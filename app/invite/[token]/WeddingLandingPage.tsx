@@ -92,9 +92,7 @@ export default function WeddingLandingPage({
   familyMembers = [],
 }: WeddingLandingPageProps) {
   const [stage, setStage] = useState<'intro' | 'unlocked'>('intro');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [videoError, setVideoError] = useState(false);
-  const [introReady, setIntroReady] = useState(false);
+  const [introError, setIntroError] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
 
   const [rsvpStatus, setRsvpStatus] = useState<
@@ -273,6 +271,56 @@ export default function WeddingLandingPage({
     };
   }, [stage]);
 
+  // ==================== INTRO VIDEO — SMOOTH AUTO PLAY ====================
+  // This runs the moment the component mounts. The intro video is the ONLY
+  // video loaded at this point (hero + events are not rendered yet because
+  // stage === 'intro'). Nothing else competes for GPU/memory/bandwidth.
+  useEffect(() => {
+    if (stage !== 'intro') return;
+    const video = introVideoRef.current;
+    if (!video) return;
+
+    // Force the browser to fully buffer before we ever show a frame
+    video.preload = 'auto';
+    video.muted = true; // muted autoplay is always allowed, no click needed
+    video.playsInline = true;
+
+    // Attempt play immediately
+    const attemptPlay = () => {
+      const p = video.play();
+      if (p && typeof p.then === 'function') {
+        p.catch(() => {
+          // If it somehow fails, retry once after a short delay
+          setTimeout(() => {
+            video.play().catch(() => setIntroError(true));
+          }, 200);
+        });
+      }
+    };
+
+    // Only start playing once we have real frames buffered — this is what
+    // prevents the "clash/broken" look. readyState >= 3 means we have
+    // enough data to play through without stalling.
+    const startWhenBuffered = () => {
+      if (video.readyState >= 3) {
+        attemptPlay();
+      }
+    };
+
+    if (video.readyState >= 3) {
+      attemptPlay();
+    } else {
+      video.addEventListener('canplaythrough', attemptPlay, { once: true });
+      // Also listen to loadeddata as a lighter fallback
+      video.addEventListener('loadeddata', startWhenBuffered, { once: true });
+    }
+
+    return () => {
+      video.removeEventListener('canplaythrough', attemptPlay);
+      video.removeEventListener('loadeddata', startWhenBuffered);
+    };
+  }, [stage]);
+
   // ==================== INTERSECTION OBSERVER ====================
   useEffect(() => {
     if (stage !== 'unlocked') return;
@@ -299,7 +347,6 @@ export default function WeddingLandingPage({
                   }
                 } catch {}
                 video.muted = false;
-                // Smooth 1.25x — no aggressive rate changes
                 video.playbackRate = 1.25;
                 const p = video.play();
                 if (p && typeof p.catch === 'function') {
@@ -333,85 +380,7 @@ export default function WeddingLandingPage({
     };
   }, [stage, mehndiWatched, baratWatched, walimaWatched, events.length, activeEventId]);
 
-  // ==================== INTRO VIDEO — SMOOTH PLAY ====================
-  // Waits for the video to buffer enough before playing so it never stutters.
-  // Preloads automatically, plays at a smooth 1.5x (safe for all devices).
-  const handleIntroPlay = useCallback((): void => {
-    const video = introVideoRef.current;
-    if (!video || videoError) return;
-
-    if (isPlaying) {
-      video.pause();
-      setIsPlaying(false);
-      return;
-    }
-
-    // Set a mild speed boost — 1.5x is smooth on virtually all devices.
-    // (1.8x was causing frame drops on mobile/low-end hardware.)
-    try {
-      video.playbackRate = 1.5;
-    } catch {}
-
-    // Try unmuted play first (best experience)
-    video.muted = false;
-    const tryPlay = video.play();
-
-    if (tryPlay && typeof tryPlay.then === 'function') {
-      tryPlay
-        .then(() => {
-          setIsPlaying(true);
-        })
-        .catch(() => {
-          // Unmuted autoplay blocked → fallback to muted play, no re-render
-          video.muted = true;
-          const p2 = video.play();
-          if (p2 && typeof p2.catch === 'function') {
-            p2.then(() => setIsPlaying(true)).catch(() => setVideoError(true));
-          } else {
-            setIsPlaying(true);
-          }
-        });
-    } else {
-      setIsPlaying(true);
-    }
-  }, [isPlaying, videoError]);
-
-  // Auto-play intro as soon as it's ready — muted, so it never gets blocked.
-  // This eliminates the "clash" because the browser already has frames buffered.
-  useEffect(() => {
-    if (stage !== 'intro') return;
-    const video = introVideoRef.current;
-    if (!video) return;
-
-    const onReady = () => {
-      setIntroReady(true);
-      try {
-        video.playbackRate = 1.5;
-      } catch {}
-      video.muted = true;
-      const p = video.play();
-      if (p && typeof p.catch === 'function') {
-        p.then(() => setIsPlaying(true)).catch(() => {
-          // Autoplay fully blocked — wait for user tap
-          setIsPlaying(false);
-        });
-      } else {
-        setIsPlaying(true);
-      }
-    };
-
-    // If already buffered enough
-    if (video.readyState >= 2) {
-      onReady();
-      return;
-    }
-
-    video.addEventListener('canplay', onReady, { once: true });
-    return () => {
-      video.removeEventListener('canplay', onReady);
-    };
-  }, [stage]);
-
+  // ==================== HANDLERS ====================
   const handleVideoEnded = useCallback((event: EventItem): void => {
     event.setWatched(true);
     setActiveEventId(null);
@@ -542,10 +511,13 @@ export default function WeddingLandingPage({
         stage !== 'intro' ? 'pb-24' : ''
       }`}
     >
-      {/* ==================== INTRO GATE — smooth auto-play ==================== */}
+      {/* ==================== INTRO GATE ==================== */}
+      {/* While stage === 'intro', we render ONLY the intro video. The hero
+          and event videos are NOT mounted yet, so nothing competes with the
+          intro for GPU/memory/bandwidth. This is what makes it smooth. */}
       {stage === 'intro' && (
-        <div className="fixed inset-0 w-full h-full bg-black z-[60] flex items-center justify-center">
-          {videoError ? (
+        <div className="fixed inset-0 w-full h-full bg-black z-[100] flex items-center justify-center">
+          {introError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 p-6 text-center">
               <p className="text-sm text-zinc-400 mb-4 font-light">
                 Cinematic intro unavailable
@@ -558,41 +530,22 @@ export default function WeddingLandingPage({
               </button>
             </div>
           ) : (
-            <>
-              <video
-                ref={introVideoRef}
-                src="/v.mp4"
-                className="w-full h-full object-cover"
-                playsInline
-                preload="auto"
-                muted
-                // Prevent any internal buffering stall from showing a broken frame
-                disablePictureInPicture
-                controls={false}
-                onError={() => setVideoError(true)}
-                onEnded={() => setStage('unlocked')}
-              />
-
-              {/* Loading shimmer — hides the initial frame so it never feels broken */}
-              {!introReady && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-[65] pointer-events-none">
-                  <div className="w-12 h-12 rounded-full border-2 border-rose-300/30 border-t-rose-300 animate-spin mb-4" />
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-rose-200/70 font-semibold">
-                    Preparing your invitation…
-                  </p>
-                </div>
-              )}
-
-              {/* Tap to enable sound (only shows if user needs to unmute) */}
-              {introReady && isPlaying && (
-                <button
-                  onClick={handleIntroPlay}
-                  className="absolute top-6 right-6 z-[70] px-4 py-2 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-black/80 transition-all shadow-xl"
-                >
-                  🔊 Sound On
-                </button>
-              )}
-            </>
+            <video
+              ref={introVideoRef}
+              src="/v.mp4"
+              className="w-full h-full object-cover"
+              playsInline
+              preload="auto"
+              muted
+              autoPlay
+              controls={false}
+              disablePictureInPicture
+              onError={() => setIntroError(true)}
+              onEnded={() => setStage('unlocked')}
+              onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
+                e.preventDefault()
+              }
+            />
           )}
 
           <div className="absolute inset-x-6 bottom-12 z-50 pointer-events-none flex justify-center">
@@ -607,601 +560,594 @@ export default function WeddingLandingPage({
               <h2 className="text-lg font-serif text-white font-bold tracking-wide capitalize truncate">
                 {guestTitle} {guestName}
               </h2>
-              {introReady && isPlaying && (
-                <p className="text-[10px] text-rose-200/80 font-light mt-1 tracking-wider uppercase">
-                  ✦ Enjoy the moment ✦
-                </p>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ==================== HERO SECTION ==================== */}
-      <section
-        id="home"
-        className="relative w-full h-screen flex flex-col justify-between overflow-hidden"
-      >
-        <div className="absolute inset-0 w-full h-full z-0">
-          <video
-            src="https://pub-4dc8201144ca418fb604349c73e8c724.r2.dev/Newbeautifulvideo.mp4"
-            className="w-full h-full object-cover filter brightness-50 contrast-110"
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/40 to-black/90"></div>
-        </div>
-
-        <div className="relative z-10 pt-10 px-6 text-center flex-1 flex flex-col justify-between items-center max-w-md mx-auto w-full pb-12">
-          <div className="inline-block bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-5 py-2 shadow-xl">
-            <p className="text-[9px] uppercase tracking-[0.25em] text-rose-300 font-semibold mb-0.5">
-              ✨ Special VIP Invitation For
-            </p>
-            <p className="text-sm font-serif text-white font-bold tracking-wide capitalize drop-shadow">
-              {guestTitle} {guestName}
-            </p>
-          </div>
-
-          <div className="space-y-4 my-auto">
-            <p className="text-xl md:text-2xl text-rose-200 font-serif tracking-widest font-medium drop-shadow-md">
-              بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
-            </p>
-
-            <blockquote className="text-[11px] italic text-zinc-300 max-w-xs mx-auto leading-relaxed font-light drop-shadow">
-              &quot;And He placed between you affection and mercy. Indeed in that
-              are signs for a people who give thought.&quot;{' '}
-              <span className="not-italic text-[10px] block mt-1 font-medium text-rose-300">
-                (Surah Ar-Rum: 21)
-              </span>
-            </blockquote>
-
-            {(groomImage || brideImage) && (
-              <div className="flex items-center justify-center gap-4 pt-2">
-                {groomImage && (
-                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
-                    <img
-                      src={groomImage}
-                      alt={groomName}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </div>
-                )}
-                <span className="text-2xl text-rose-400 font-serif">&</span>
-                {brideImage && (
-                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
-                    <img
-                      src={brideImage}
-                      alt={brideName}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {personalMessage && (
-              <div className="max-w-xs mx-auto bg-white/5 backdrop-blur-md border border-rose-300/20 rounded-2xl px-4 py-3">
-                <p className="text-[10px] uppercase tracking-widest text-rose-300 font-bold mb-1">
-                  💌 Personal Message
-                </p>
-                <p className="text-[11px] italic text-zinc-200 leading-relaxed">
-                  &quot;{personalMessage}&quot;
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-1.5 pt-2">
-              <span className="text-[9px] uppercase tracking-[0.3em] text-rose-300 font-bold block">
-                Wedding Celebration
-              </span>
-              <h1 className="text-3xl md:text-4xl font-serif text-white tracking-tight drop-shadow-lg capitalize">
-                {groomName}{' '}
-                <span className="text-rose-400 font-light">&</span> {brideName}
-              </h1>
-              {allowedGuests > 1 && (
-                <p className="text-[10px] text-rose-200/70 uppercase tracking-widest pt-1">
-                  Reserved for {allowedGuests} guests
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div
-            className="animate-bounce flex flex-col items-center cursor-pointer"
-            onClick={() => scrollToSection('events')}
+      {/* ==================== EVERYTHING ELSE — only mounted after intro ==================== */}
+      {stage === 'unlocked' && (
+        <>
+          {/* ==================== HERO SECTION ==================== */}
+          <section
+            id="home"
+            className="relative w-full h-screen flex flex-col justify-between overflow-hidden"
           >
-            <p className="text-[9px] uppercase tracking-[0.2em] text-rose-200 font-medium mb-1">
-              Scroll Down to Events ↓
-            </p>
-            <span className="text-base text-rose-300">↓</span>
-          </div>
-        </div>
-      </section>
+            <div className="absolute inset-0 w-full h-full z-0">
+              <video
+                src="https://pub-4dc8201144ca418fb604349c73e8c724.r2.dev/Newbeautifulvideo.mp4"
+                className="w-full h-full object-cover filter brightness-50 contrast-110"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/40 to-black/90"></div>
+            </div>
 
-      {/* ==================== EVENT SECTIONS ==================== */}
-      <div id="events" className="relative z-10 w-full flex flex-col">
-        {events.length === 0 ? (
-          <div className="w-full max-w-md mx-auto px-4 py-20 text-center">
-            <p className="text-zinc-400 text-sm">No events configured yet.</p>
-          </div>
-        ) : (
-          events.map((event: EventItem, idx: number) => {
-            const colors = colorMap[event.color];
-            const isPlayingThis = activeEventId === event.id;
-            const isWatched = event.watched;
+            <div className="relative z-10 pt-10 px-6 text-center flex-1 flex flex-col justify-between items-center max-w-md mx-auto w-full pb-12">
+              <div className="inline-block bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-5 py-2 shadow-xl">
+                <p className="text-[9px] uppercase tracking-[0.25em] text-rose-300 font-semibold mb-0.5">
+                  ✨ Special VIP Invitation For
+                </p>
+                <p className="text-sm font-serif text-white font-bold tracking-wide capitalize drop-shadow">
+                  {guestTitle} {guestName}
+                </p>
+              </div>
 
-            return (
-              <section
-                key={event.id}
-                id={`event-${event.id}`}
-                className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
-              >
-                {/* ===== FULL SCREEN VIDEO ===== */}
-                <video
-                  ref={event.ref}
-                  src={event.video}
-                  className="absolute inset-0 w-full h-full object-cover z-0"
-                  playsInline
-                  preload={idx === 0 ? 'auto' : 'metadata'}
-                  controls={false}
-                  disablePictureInPicture
-                  onEnded={() => handleVideoEnded(event)}
-                  onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
-                    e.preventDefault()
-                  }
-                />
+              <div className="space-y-4 my-auto">
+                <p className="text-xl md:text-2xl text-rose-200 font-serif tracking-widest font-medium drop-shadow-md">
+                  بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+                </p>
 
-                {/* ===== CINEMATIC OVERLAYS ===== */}
-                <div className="absolute inset-0 z-[1] pointer-events-none">
-                  <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
-                  <div className="absolute bottom-0 inset-x-0 h-56 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-                  <div className="absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black/50 to-transparent" />
-                  <div className="absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black/50 to-transparent" />
-                  <div
-                    className={`absolute bottom-0 inset-x-0 h-48 bg-gradient-to-t ${
-                      event.color === 'amber'
-                        ? 'from-amber-500/20'
-                        : event.color === 'rose'
-                        ? 'from-rose-500/20'
-                        : 'from-emerald-500/20'
-                    } via-transparent to-transparent opacity-70`}
-                  />
-                </div>
-
-                {/* ===== EVENT BADGE ===== */}
-                <div className="absolute top-6 inset-x-0 z-20 text-center px-4 pointer-events-none">
-                  <span
-                    className={`text-[9px] uppercase tracking-[0.3em] ${colors.text} font-bold bg-black/70 px-5 py-2 rounded-full border ${colors.border} backdrop-blur-md shadow-2xl inline-block`}
-                  >
-                    <span className="opacity-60">Celebration</span>{' '}
-                    {String(idx + 1).padStart(2, '0')}{' '}
-                    <span className="opacity-60">•</span> {event.name}
+                <blockquote className="text-[11px] italic text-zinc-300 max-w-xs mx-auto leading-relaxed font-light drop-shadow">
+                  &quot;And He placed between you affection and mercy. Indeed in that
+                  are signs for a people who give thought.&quot;{' '}
+                  <span className="not-italic text-[10px] block mt-1 font-medium text-rose-300">
+                    (Surah Ar-Rum: 21)
                   </span>
-                </div>
+                </blockquote>
 
-                {/* ===== SCROLL HINT ===== */}
-                <div className="absolute bottom-8 inset-x-0 z-20 text-center px-4 pointer-events-none">
-                  {isPlayingThis && !isWatched ? (
-                    <p className="text-[9px] uppercase tracking-[0.3em] text-white/60 font-semibold animate-pulse">
-                      ✦ Scroll freely • Details unlock when video ends ✦
+                {(groomImage || brideImage) && (
+                  <div className="flex items-center justify-center gap-4 pt-2">
+                    {groomImage && (
+                      <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
+                        <img
+                          src={groomImage}
+                          alt={groomName}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </div>
+                    )}
+                    <span className="text-2xl text-rose-400 font-serif">&</span>
+                    {brideImage && (
+                      <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
+                        <img
+                          src={brideImage}
+                          alt={brideName}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {personalMessage && (
+                  <div className="max-w-xs mx-auto bg-white/5 backdrop-blur-md border border-rose-300/20 rounded-2xl px-4 py-3">
+                    <p className="text-[10px] uppercase tracking-widest text-rose-300 font-bold mb-1">
+                      💌 Personal Message
                     </p>
-                  ) : !isWatched ? (
-                    <p className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-semibold animate-pulse">
-                      ✦ Scroll to play next event ✦
+                    <p className="text-[11px] italic text-zinc-200 leading-relaxed">
+                      &quot;{personalMessage}&quot;
                     </p>
-                  ) : null}
+                  </div>
+                )}
+
+                <div className="space-y-1.5 pt-2">
+                  <span className="text-[9px] uppercase tracking-[0.3em] text-rose-300 font-bold block">
+                    Wedding Celebration
+                  </span>
+                  <h1 className="text-3xl md:text-4xl font-serif text-white tracking-tight drop-shadow-lg capitalize">
+                    {groomName}{' '}
+                    <span className="text-rose-400 font-light">&</span> {brideName}
+                  </h1>
+                  {allowedGuests > 1 && (
+                    <p className="text-[10px] text-rose-200/70 uppercase tracking-widest pt-1">
+                      Reserved for {allowedGuests} guests
+                    </p>
+                  )}
                 </div>
+              </div>
 
-                {/* ===== WATCHED DETAILS CARD ===== */}
-                {isWatched && (
-                  <div className="absolute bottom-0 inset-x-0 z-40 p-5 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-fade-in max-w-md mx-auto w-full max-h-[85vh] overflow-y-auto">
-                    <span
-                      className={`text-[9px] uppercase tracking-widest ${colors.text} font-bold ${colors.bg} px-3 py-1 rounded-full border ${colors.border} inline-block mb-3`}
-                    >
-                      ✓ {event.name} Details Unlocked
-                    </span>
+              <div
+                className="animate-bounce flex flex-col items-center cursor-pointer"
+                onClick={() => scrollToSection('events')}
+              >
+                <p className="text-[9px] uppercase tracking-[0.2em] text-rose-200 font-medium mb-1">
+                  Scroll Down to Events ↓
+                </p>
+                <span className="text-base text-rose-300">↓</span>
+              </div>
+            </div>
+          </section>
 
-                    <h3 className="text-lg font-serif text-white mb-3">
-                      {event.emoji} {event.name}
-                    </h3>
+          {/* ==================== EVENT SECTIONS ==================== */}
+          <div id="events" className="relative z-10 w-full flex flex-col">
+            {events.length === 0 ? (
+              <div className="w-full max-w-md mx-auto px-4 py-20 text-center">
+                <p className="text-zinc-400 text-sm">No events configured yet.</p>
+              </div>
+            ) : (
+              events.map((event: EventItem, idx: number) => {
+                const colors = colorMap[event.color];
+                const isPlayingThis = activeEventId === event.id;
+                const isWatched = event.watched;
 
-                    <div className="space-y-2 bg-white/5 p-3.5 rounded-2xl border border-white/10 mb-3">
-                      <p className="text-xs text-zinc-200">
-                        📅{' '}
-                        <strong className="text-white">
-                          {formatDate(event.date)}
-                        </strong>
-                        {event.time && (
-                          <>
-                            {' '}
-                            | ⏰{' '}
-                            <strong className="text-white">{event.time}</strong>
-                          </>
-                        )}
-                      </p>
-                      {event.venue && (
-                        <p className="text-xs text-zinc-300">
-                          📍 {event.venue}
-                        </p>
-                      )}
+                return (
+                  <section
+                    key={event.id}
+                    id={`event-${event.id}`}
+                    className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
+                  >
+                    <video
+                      ref={event.ref}
+                      src={event.video}
+                      className="absolute inset-0 w-full h-full object-cover z-0"
+                      playsInline
+                      preload={idx === 0 ? 'auto' : 'metadata'}
+                      controls={false}
+                      disablePictureInPicture
+                      onEnded={() => handleVideoEnded(event)}
+                      onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
+                        e.preventDefault()
+                      }
+                    />
+
+                    <div className="absolute inset-0 z-[1] pointer-events-none">
+                      <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
+                      <div className="absolute bottom-0 inset-x-0 h-56 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+                      <div className="absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black/50 to-transparent" />
+                      <div className="absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black/50 to-transparent" />
+                      <div
+                        className={`absolute bottom-0 inset-x-0 h-48 bg-gradient-to-t ${
+                          event.color === 'amber'
+                            ? 'from-amber-500/20'
+                            : event.color === 'rose'
+                            ? 'from-rose-500/20'
+                            : 'from-emerald-500/20'
+                        } via-transparent to-transparent opacity-70`}
+                      />
                     </div>
 
-                    {event.ayat && (
-                      <div
-                        className={`relative p-4 rounded-2xl ${colors.bg} border ${colors.border} mb-3 overflow-hidden`}
+                    <div className="absolute top-6 inset-x-0 z-20 text-center px-4 pointer-events-none">
+                      <span
+                        className={`text-[9px] uppercase tracking-[0.3em] ${colors.text} font-bold bg-black/70 px-5 py-2 rounded-full border ${colors.border} backdrop-blur-md shadow-2xl inline-block`}
                       >
-                        <div
-                          className={`absolute top-0 right-0 w-16 h-16 ${colors.bg} rounded-full blur-2xl opacity-50`}
-                        ></div>
+                        <span className="opacity-60">Celebration</span>{' '}
+                        {String(idx + 1).padStart(2, '0')}{' '}
+                        <span className="opacity-60">•</span> {event.name}
+                      </span>
+                    </div>
 
-                        <div className="relative z-10">
-                          <p className="text-[9px] uppercase tracking-widest text-white/60 font-bold mb-2 flex items-center gap-1.5">
-                            <span>🕌</span> Blessing
-                          </p>
+                    <div className="absolute bottom-8 inset-x-0 z-20 text-center px-4 pointer-events-none">
+                      {isPlayingThis && !isWatched ? (
+                        <p className="text-[9px] uppercase tracking-[0.3em] text-white/60 font-semibold animate-pulse">
+                          ✦ Scroll freely • Details unlock when video ends ✦
+                        </p>
+                      ) : !isWatched ? (
+                        <p className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-semibold animate-pulse">
+                          ✦ Scroll to play next event ✦
+                        </p>
+                      ) : null}
+                    </div>
 
-                          <p
-                            className="text-right text-base sm:text-lg text-white font-serif leading-loose mb-3"
-                            dir="rtl"
-                            style={{
-                              fontFamily:
-                                '"Amiri", "Traditional Arabic", serif',
-                            }}
-                          >
-                            {event.ayat.arabic}
-                          </p>
+                    {isWatched && (
+                      <div className="absolute bottom-0 inset-x-0 z-40 p-5 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-fade-in max-w-md mx-auto w-full max-h-[85vh] overflow-y-auto">
+                        <span
+                          className={`text-[9px] uppercase tracking-widest ${colors.text} font-bold ${colors.bg} px-3 py-1 rounded-full border ${colors.border} inline-block mb-3`}
+                        >
+                          ✓ {event.name} Details Unlocked
+                        </span>
 
-                          <p className="text-[10px] italic text-white/80 leading-relaxed mb-1">
-                            &quot;{event.ayat.translation}&quot;
-                          </p>
+                        <h3 className="text-lg font-serif text-white mb-3">
+                          {event.emoji} {event.name}
+                        </h3>
 
-                          <p
-                            className={`text-[9px] font-bold ${colors.textLight} text-right`}
-                          >
-                            — {event.ayat.reference}
+                        <div className="space-y-2 bg-white/5 p-3.5 rounded-2xl border border-white/10 mb-3">
+                          <p className="text-xs text-zinc-200">
+                            📅{' '}
+                            <strong className="text-white">
+                              {formatDate(event.date)}
+                            </strong>
+                            {event.time && (
+                              <>
+                                {' '}
+                                | ⏰{' '}
+                                <strong className="text-white">{event.time}</strong>
+                              </>
+                            )}
                           </p>
+                          {event.venue && (
+                            <p className="text-xs text-zinc-300">
+                              📍 {event.venue}
+                            </p>
+                          )}
                         </div>
+
+                        {event.ayat && (
+                          <div
+                            className={`relative p-4 rounded-2xl ${colors.bg} border ${colors.border} mb-3 overflow-hidden`}
+                          >
+                            <div
+                              className={`absolute top-0 right-0 w-16 h-16 ${colors.bg} rounded-full blur-2xl opacity-50`}
+                            ></div>
+
+                            <div className="relative z-10">
+                              <p className="text-[9px] uppercase tracking-widest text-white/60 font-bold mb-2 flex items-center gap-1.5">
+                                <span>🕌</span> Blessing
+                              </p>
+
+                              <p
+                                className="text-right text-base sm:text-lg text-white font-serif leading-loose mb-3"
+                                dir="rtl"
+                                style={{
+                                  fontFamily:
+                                    '"Amiri", "Traditional Arabic", serif',
+                                }}
+                              >
+                                {event.ayat.arabic}
+                              </p>
+
+                              <p className="text-[10px] italic text-white/80 leading-relaxed mb-1">
+                                &quot;{event.ayat.translation}&quot;
+                              </p>
+
+                              <p
+                                className={`text-[9px] font-bold ${colors.textLight} text-right`}
+                              >
+                                — {event.ayat.reference}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2.5">
+                          {event.date && (
+                            <a
+                              href={generateCalendarLink(
+                                `${event.name} - ${groomName} & ${brideName}`,
+                                event.date,
+                                event.time,
+                                event.venue
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 py-3 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] uppercase tracking-wider font-bold text-white text-center flex items-center justify-center gap-1.5"
+                            >
+                              <span>📅</span> Calendar
+                            </a>
+                          )}
+                          {event.mapLink && (
+                            <a
+                              href={event.mapLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`flex-1 py-3 px-3 ${colors.bg} ${colors.bgHover} border ${colors.borderBtn} rounded-2xl text-[10px] uppercase tracking-wider font-bold ${colors.textLight} text-center flex items-center justify-center gap-1.5`}
+                            >
+                              <span>🗺️</span> Open Map
+                            </a>
+                          )}
+                        </div>
+
+                        <p className="text-center text-[10px] text-zinc-400 mt-4 uppercase tracking-widest animate-pulse">
+                          {idx < events.length - 1
+                            ? 'Scroll down for next event ↓'
+                            : 'Scroll down to RSVP ↓'}
+                        </p>
+                      </div>
+                    )}
+                  </section>
+                );
+              })
+            )}
+          </div>
+
+          {/* ==================== FAMILY SECTION ==================== */}
+          {hasFamilyMembers && (
+            <div id="family" className="w-full max-w-md mx-auto px-4 py-12">
+              <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 shadow-2xl">
+                {(groomImage || brideImage) && (
+                  <div className="flex items-center justify-center gap-4 mb-6 pb-6 border-b border-white/10">
+                    {groomImage && (
+                      <div className="text-center">
+                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
+                          <img
+                            src={groomImage}
+                            alt={groomName}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        </div>
+                        <p className="text-xs font-semibold text-white capitalize">
+                          {groomName}
+                        </p>
+                        <p className="text-[9px] text-rose-300 uppercase tracking-widest">
+                          Groom
+                        </p>
                       </div>
                     )}
 
-                    <div className="flex gap-2.5">
-                      {event.date && (
-                        <a
-                          href={generateCalendarLink(
-                            `${event.name} - ${groomName} & ${brideName}`,
-                            event.date,
-                            event.time,
-                            event.venue
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 py-3 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] uppercase tracking-wider font-bold text-white text-center flex items-center justify-center gap-1.5"
-                        >
-                          <span>📅</span> Calendar
-                        </a>
+                    <span className="text-2xl text-rose-400 font-serif">&</span>
+
+                    {brideImage && (
+                      <div className="text-center">
+                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
+                          <img
+                            src={brideImage}
+                            alt={brideName}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        </div>
+                        <p className="text-xs font-semibold text-white capitalize">
+                          {brideName}
+                        </p>
+                        <p className="text-[9px] text-rose-300 uppercase tracking-widest">
+                          Bride
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="text-center mb-6">
+                  <h3 className="text-xl font-serif text-white mb-1">Our Family</h3>
+                  <p className="text-xs text-zinc-400">
+                    The people who make it special
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {familyMembers.map((member: FamilyMember) => (
+                    <div
+                      key={member.id}
+                      className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/10 text-center"
+                    >
+                      {member.profile_image ? (
+                        <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/30 mb-2">
+                          <img
+                            src={member.profile_image}
+                            alt={member.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-rose-500/30 to-pink-600/30 border-2 border-rose-400/30 flex items-center justify-center mb-2">
+                          <span className="text-lg font-bold text-rose-200">
+                            {member.name?.charAt(0).toUpperCase() || '?'}
+                          </span>
+                        </div>
                       )}
-                      {event.mapLink && (
-                        <a
-                          href={event.mapLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`flex-1 py-3 px-3 ${colors.bg} ${colors.bgHover} border ${colors.borderBtn} rounded-2xl text-[10px] uppercase tracking-wider font-bold ${colors.textLight} text-center flex items-center justify-center gap-1.5`}
-                        >
-                          <span>🗺️</span> Open Map
-                        </a>
+
+                      <p className="text-xs font-semibold text-white truncate w-full capitalize">
+                        {member.name}
+                      </p>
+                      {member.role && (
+                        <p className="text-[9px] text-rose-300 uppercase tracking-widest mt-0.5">
+                          {member.role}
+                        </p>
                       )}
                     </div>
-
-                    <p className="text-center text-[10px] text-zinc-400 mt-4 uppercase tracking-widest animate-pulse">
-                      {idx < events.length - 1
-                        ? 'Scroll down for next event ↓'
-                        : 'Scroll down to RSVP ↓'}
-                    </p>
-                  </div>
-                )}
-              </section>
-            );
-          })
-        )}
-      </div>
-
-      {/* ==================== FAMILY SECTION ==================== */}
-      {hasFamilyMembers && (
-        <div id="family" className="w-full max-w-md mx-auto px-4 py-12">
-          <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 shadow-2xl">
-            {(groomImage || brideImage) && (
-              <div className="flex items-center justify-center gap-4 mb-6 pb-6 border-b border-white/10">
-                {groomImage && (
-                  <div className="text-center">
-                    <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
-                      <img
-                        src={groomImage}
-                        alt={groomName}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    </div>
-                    <p className="text-xs font-semibold text-white capitalize">
-                      {groomName}
-                    </p>
-                    <p className="text-[9px] text-rose-300 uppercase tracking-widest">
-                      Groom
-                    </p>
-                  </div>
-                )}
-
-                <span className="text-2xl text-rose-400 font-serif">&</span>
-
-                {brideImage && (
-                  <div className="text-center">
-                    <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
-                      <img
-                        src={brideImage}
-                        alt={brideName}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    </div>
-                    <p className="text-xs font-semibold text-white capitalize">
-                      {brideName}
-                    </p>
-                    <p className="text-[9px] text-rose-300 uppercase tracking-widest">
-                      Bride
-                    </p>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
-            )}
-
-            <div className="text-center mb-6">
-              <h3 className="text-xl font-serif text-white mb-1">Our Family</h3>
-              <p className="text-xs text-zinc-400">
-                The people who make it special
-              </p>
             </div>
+          )}
 
-            <div className="grid grid-cols-2 gap-3">
-              {familyMembers.map((member: FamilyMember) => (
-                <div
-                  key={member.id}
-                  className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/10 text-center"
-                >
-                  {member.profile_image ? (
-                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/30 mb-2">
-                      <img
-                        src={member.profile_image}
-                        alt={member.name}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-rose-500/30 to-pink-600/30 border-2 border-rose-400/30 flex items-center justify-center mb-2">
-                      <span className="text-lg font-bold text-rose-200">
-                        {member.name?.charAt(0).toUpperCase() || '?'}
-                      </span>
+          {/* ==================== CONTACTS ==================== */}
+          {(wedding.contact_person_1 || wedding.contact_person_2) && (
+            <div className="w-full max-w-md mx-auto px-4 py-8">
+              <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
+                <h3 className="text-xl font-serif text-white mb-1">Contact Us</h3>
+                <p className="text-xs text-zinc-400 mb-4">
+                  Reach out for any assistance
+                </p>
+
+                <div className="space-y-3">
+                  {wedding.contact_person_1 && wedding.contact_number_1 && (
+                    <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
+                      <p className="text-[10px] uppercase tracking-widest text-rose-300 font-semibold mb-1">
+                        {wedding.contact_person_1}
+                      </p>
+                      <a
+                        href={`tel:${wedding.contact_number_1}`}
+                        className="text-sm font-bold text-white hover:text-rose-300 transition-colors"
+                      >
+                        📞 {wedding.contact_number_1}
+                      </a>
                     </div>
                   )}
 
-                  <p className="text-xs font-semibold text-white truncate w-full capitalize">
-                    {member.name}
-                  </p>
-                  {member.role && (
-                    <p className="text-[9px] text-rose-300 uppercase tracking-widest mt-0.5">
-                      {member.role}
-                    </p>
+                  {wedding.contact_person_2 && wedding.contact_number_2 && (
+                    <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
+                      <p className="text-[10px] uppercase tracking-widest text-rose-300 font-semibold mb-1">
+                        {wedding.contact_person_2}
+                      </p>
+                      <a
+                        href={`tel:${wedding.contact_number_2}`}
+                        className="text-sm font-bold text-white hover:text-rose-300 transition-colors"
+                      >
+                        📞 {wedding.contact_number_2}
+                      </a>
+                    </div>
                   )}
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== CONTACTS ==================== */}
-      {(wedding.contact_person_1 || wedding.contact_person_2) && (
-        <div className="w-full max-w-md mx-auto px-4 py-8">
-          <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
-            <h3 className="text-xl font-serif text-white mb-1">Contact Us</h3>
-            <p className="text-xs text-zinc-400 mb-4">
-              Reach out for any assistance
-            </p>
-
-            <div className="space-y-3">
-              {wedding.contact_person_1 && wedding.contact_number_1 && (
-                <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                  <p className="text-[10px] uppercase tracking-widest text-rose-300 font-semibold mb-1">
-                    {wedding.contact_person_1}
-                  </p>
-                  <a
-                    href={`tel:${wedding.contact_number_1}`}
-                    className="text-sm font-bold text-white hover:text-rose-300 transition-colors"
-                  >
-                    📞 {wedding.contact_number_1}
-                  </a>
-                </div>
-              )}
-
-              {wedding.contact_person_2 && wedding.contact_number_2 && (
-                <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                  <p className="text-[10px] uppercase tracking-widest text-rose-300 font-semibold mb-1">
-                    {wedding.contact_person_2}
-                  </p>
-                  <a
-                    href={`tel:${wedding.contact_number_2}`}
-                    className="text-sm font-bold text-white hover:text-rose-300 transition-colors"
-                  >
-                    📞 {wedding.contact_number_2}
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== RSVP SECTION ==================== */}
-      <div id="rsvp" className="w-full max-w-md mx-auto px-4 py-4 mb-16">
-        <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
-          <div
-            className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rsvpMessage.gradient} border ${rsvpMessage.border} p-5 mb-5`}
-          >
-            <div className="text-4xl mb-2">{rsvpMessage.emoji}</div>
-            <h3
-              className={`text-lg font-serif ${rsvpMessage.textColor} mb-0.5`}
-            >
-              {rsvpMessage.title}
-            </h3>
-            <p className="text-[10px] uppercase tracking-widest text-white/60 mb-3">
-              {rsvpMessage.subtitle}
-            </p>
-            <p className="text-[11px] text-zinc-200 leading-relaxed italic">
-              {rsvpMessage.message}
-            </p>
-
-            {rsvpStatus === 'attending' && (
-              <p
-                className="text-[10px] text-emerald-300/80 mt-3 font-serif"
-                dir="rtl"
-              >
-                بَارَكَ اللَّهُ لَكُمْ وَبَارَكَ عَلَيْكُمْ
-              </p>
-            )}
-
-            {rsvpStatus === 'not_attending' && (
-              <p
-                className="text-[10px] text-rose-300/80 mt-3 font-serif"
-                dir="rtl"
-              >
-                جَزَاكَ اللَّهُ خَيْرًا
-              </p>
-            )}
-          </div>
-
-          {rsvpStatus === 'pending' && (
-            <>
-              <h3 className="text-base font-serif text-white mb-1">
-                Confirm Attendance
-              </h3>
-              <p className="text-xs text-zinc-400 mb-5">
-                {`Please respond to help us arrange your seat${
-                  allowedGuests > 1 ? ` for ${allowedGuests} guests` : ''
-                }`}
-              </p>
-
-              <div className="space-y-3">
-                <button
-                  onClick={() => handleRsvpSubmit('attending')}
-                  disabled={isSubmitting}
-                  className="w-full py-4 rounded-2xl text-xs uppercase tracking-[0.2em] font-bold transition-all shadow-lg active:scale-98 bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30"
-                >
-                  {isSubmitting ? '...' : '✓ Accept Invitation'}
-                </button>
-
-                <button
-                  onClick={() => handleRsvpSubmit('not_attending')}
-                  disabled={isSubmitting}
-                  className="w-full py-4 rounded-2xl text-xs uppercase tracking-[0.2em] font-bold transition-all shadow-sm active:scale-98 bg-rose-500/20 text-rose-200 border border-rose-500/40 hover:bg-rose-500/30"
-                >
-                  {isSubmitting ? '...' : '✗ Regretfully Decline'}
-                </button>
               </div>
-            </>
+            </div>
           )}
 
-          {rsvpStatus !== 'pending' && (
+          {/* ==================== RSVP SECTION ==================== */}
+          <div id="rsvp" className="w-full max-w-md mx-auto px-4 py-4 mb-16">
+            <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
+              <div
+                className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rsvpMessage.gradient} border ${rsvpMessage.border} p-5 mb-5`}
+              >
+                <div className="text-4xl mb-2">{rsvpMessage.emoji}</div>
+                <h3
+                  className={`text-lg font-serif ${rsvpMessage.textColor} mb-0.5`}
+                >
+                  {rsvpMessage.title}
+                </h3>
+                <p className="text-[10px] uppercase tracking-widest text-white/60 mb-3">
+                  {rsvpMessage.subtitle}
+                </p>
+                <p className="text-[11px] text-zinc-200 leading-relaxed italic">
+                  {rsvpMessage.message}
+                </p>
+
+                {rsvpStatus === 'attending' && (
+                  <p
+                    className="text-[10px] text-emerald-300/80 mt-3 font-serif"
+                    dir="rtl"
+                  >
+                    بَارَكَ اللَّهُ لَكُمْ وَبَارَكَ عَلَيْكُمْ
+                  </p>
+                )}
+
+                {rsvpStatus === 'not_attending' && (
+                  <p
+                    className="text-[10px] text-rose-300/80 mt-3 font-serif"
+                    dir="rtl"
+                  >
+                    جَزَاكَ اللَّهُ خَيْرًا
+                  </p>
+                )}
+              </div>
+
+              {rsvpStatus === 'pending' && (
+                <>
+                  <h3 className="text-base font-serif text-white mb-1">
+                    Confirm Attendance
+                  </h3>
+                  <p className="text-xs text-zinc-400 mb-5">
+                    {`Please respond to help us arrange your seat${
+                      allowedGuests > 1 ? ` for ${allowedGuests} guests` : ''
+                    }`}
+                  </p>
+
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => handleRsvpSubmit('attending')}
+                      disabled={isSubmitting}
+                      className="w-full py-4 rounded-2xl text-xs uppercase tracking-[0.2em] font-bold transition-all shadow-lg active:scale-98 bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30"
+                    >
+                      {isSubmitting ? '...' : '✓ Accept Invitation'}
+                    </button>
+
+                    <button
+                      onClick={() => handleRsvpSubmit('not_attending')}
+                      disabled={isSubmitting}
+                      className="w-full py-4 rounded-2xl text-xs uppercase tracking-[0.2em] font-bold transition-all shadow-sm active:scale-98 bg-rose-500/20 text-rose-200 border border-rose-500/40 hover:bg-rose-500/30"
+                    >
+                      {isSubmitting ? '...' : '✗ Regretfully Decline'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {rsvpStatus !== 'pending' && (
+                <button
+                  onClick={() => setRsvpStatus('pending')}
+                  className="text-[10px] text-zinc-400 hover:text-zinc-200 underline uppercase tracking-widest transition-colors"
+                >
+                  Change my response
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ==================== FOOTER ==================== */}
+          <footer className="relative z-10 text-center py-8 px-6 border-t border-white/10 bg-black/60 mb-16">
+            <p className="text-[11px] text-zinc-400 font-medium capitalize">
+              {groomName} & {brideName} • {new Date().getFullYear()}
+            </p>
+            <p className="text-[10px] text-rose-300 font-semibold mt-1 flex items-center justify-center gap-1">
+              <span>Made with</span>{' '}
+              <span className="text-rose-400 animate-pulse">❤️</span>{' '}
+              <span>for Loved Ones</span>
+            </p>
+          </footer>
+
+          {/* ==================== BOTTOM NAV ==================== */}
+          <div className="fixed bottom-0 inset-x-0 z-50 p-3 bg-black/80 backdrop-blur-2xl border-t border-white/15 max-w-md mx-auto flex items-center justify-around shadow-2xl">
             <button
-              onClick={() => setRsvpStatus('pending')}
-              className="text-[10px] text-zinc-400 hover:text-zinc-200 underline uppercase tracking-widest transition-colors"
-            >
-              Change my response
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ==================== FOOTER ==================== */}
-      <footer className="relative z-10 text-center py-8 px-6 border-t border-white/10 bg-black/60 mb-16">
-        <p className="text-[11px] text-zinc-400 font-medium capitalize">
-          {groomName} & {brideName} • {new Date().getFullYear()}
-        </p>
-        <p className="text-[10px] text-rose-300 font-semibold mt-1 flex items-center justify-center gap-1">
-          <span>Made with</span>{' '}
-          <span className="text-rose-400 animate-pulse">❤️</span>{' '}
-          <span>for Loved Ones</span>
-        </p>
-      </footer>
-
-      {/* ==================== BOTTOM NAV ==================== */}
-      {stage !== 'intro' && (
-        <div className="fixed bottom-0 inset-x-0 z-50 p-3 bg-black/80 backdrop-blur-2xl border-t border-white/15 max-w-md mx-auto flex items-center justify-around shadow-2xl">
-          <button
-            onClick={() => scrollToSection('home')}
-            className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-              activeTab === 'home'
-                ? 'text-rose-400 bg-white/10'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span className="text-base">🏠</span>
-            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-              Home
-            </span>
-          </button>
-
-          <button
-            onClick={() => scrollToSection('events')}
-            className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-              activeTab === 'events'
-                ? 'text-rose-400 bg-white/10'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span className="text-base">🎥</span>
-            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-              Events
-            </span>
-          </button>
-
-          {hasFamilyMembers && (
-            <button
-              onClick={() => scrollToSection('family')}
+              onClick={() => scrollToSection('home')}
               className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-                activeTab === 'family'
+                activeTab === 'home'
                   ? 'text-rose-400 bg-white/10'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
-              <span className="text-base">👨‍👩‍👧</span>
+              <span className="text-base">🏠</span>
               <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-                Family
+                Home
               </span>
             </button>
-          )}
 
-          <button
-            onClick={() => scrollToSection('rsvp')}
-            className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-              activeTab === 'rsvp'
-                ? 'text-rose-400 bg-white/10'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span className="text-base">✨</span>
-            <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-              RSVP
-            </span>
-          </button>
-        </div>
+            <button
+              onClick={() => scrollToSection('events')}
+              className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
+                activeTab === 'events'
+                  ? 'text-rose-400 bg-white/10'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <span className="text-base">🎥</span>
+              <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
+                Events
+              </span>
+            </button>
+
+            {hasFamilyMembers && (
+              <button
+                onClick={() => scrollToSection('family')}
+                className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
+                  activeTab === 'family'
+                    ? 'text-rose-400 bg-white/10'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <span className="text-base">👨‍👩‍👧</span>
+                <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
+                  Family
+                </span>
+              </button>
+            )}
+
+            <button
+              onClick={() => scrollToSection('rsvp')}
+              className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
+                activeTab === 'rsvp'
+                  ? 'text-rose-400 bg-white/10'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <span className="text-base">✨</span>
+              <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
+                RSVP
+              </span>
+            </button>
+          </div>
+        </>
       )}
     </main>
   );
