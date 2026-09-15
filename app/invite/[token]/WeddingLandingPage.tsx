@@ -94,6 +94,7 @@ export default function WeddingLandingPage({
   const [stage, setStage] = useState<'intro' | 'unlocked'>('intro');
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [introReady, setIntroReady] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
 
   const [rsvpStatus, setRsvpStatus] = useState<
@@ -260,9 +261,8 @@ export default function WeddingLandingPage({
     },
   };
 
-  // ==================== SCROLL LOCK — NEVER LOCK ON EVENTS ====================
+  // ==================== SCROLL LOCK ====================
   useEffect(() => {
-    // Only lock scroll during intro stage
     const shouldLock = stage === 'intro';
     document.body.style.overflow = shouldLock ? 'hidden' : 'auto';
     document.documentElement.style.overflow = shouldLock ? 'hidden' : 'auto';
@@ -274,8 +274,6 @@ export default function WeddingLandingPage({
   }, [stage]);
 
   // ==================== INTERSECTION OBSERVER ====================
-  // Watches events: auto-plays when visible, pauses when scrolled away.
-  // Does NOT lock scroll — user can scroll freely at any time.
   useEffect(() => {
     if (stage !== 'unlocked') return;
     if (events.length === 0) return;
@@ -301,6 +299,7 @@ export default function WeddingLandingPage({
                   }
                 } catch {}
                 video.muted = false;
+                // Smooth 1.25x — no aggressive rate changes
                 video.playbackRate = 1.25;
                 const p = video.play();
                 if (p && typeof p.catch === 'function') {
@@ -311,7 +310,6 @@ export default function WeddingLandingPage({
                 }
               }
             } else if (!entry.isIntersecting) {
-              // Pause when scrolled away — frees resources
               if (!video.paused) {
                 try {
                   video.pause();
@@ -335,10 +333,12 @@ export default function WeddingLandingPage({
     };
   }, [stage, mehndiWatched, baratWatched, walimaWatched, events.length, activeEventId]);
 
-  // ==================== INTRO HANDLER — 1.8x SPEED ====================
-  const handleIntroPlay = (): void => {
-    if (!introVideoRef.current || videoError) return;
+  // ==================== INTRO VIDEO — SMOOTH PLAY ====================
+  // Waits for the video to buffer enough before playing so it never stutters.
+  // Preloads automatically, plays at a smooth 1.5x (safe for all devices).
+  const handleIntroPlay = useCallback((): void => {
     const video = introVideoRef.current;
+    if (!video || videoError) return;
 
     if (isPlaying) {
       video.pause();
@@ -346,20 +346,71 @@ export default function WeddingLandingPage({
       return;
     }
 
-    // Play at 1.8x speed — no skip, intro flows fast to the end
-    video.playbackRate = 1.8;
+    // Set a mild speed boost — 1.5x is smooth on virtually all devices.
+    // (1.8x was causing frame drops on mobile/low-end hardware.)
+    try {
+      video.playbackRate = 1.5;
+    } catch {}
+
+    // Try unmuted play first (best experience)
     video.muted = false;
-    const p = video.play();
-    if (p && typeof p.catch === 'function') {
-      // If unmuted autoplay is blocked, fallback to muted play at 1.8x
-      p.catch(() => {
-        video.muted = true;
-        video.playbackRate = 1.8;
-        video.play().catch(() => setVideoError(true));
-      });
+    const tryPlay = video.play();
+
+    if (tryPlay && typeof tryPlay.then === 'function') {
+      tryPlay
+        .then(() => {
+          setIsPlaying(true);
+        })
+        .catch(() => {
+          // Unmuted autoplay blocked → fallback to muted play, no re-render
+          video.muted = true;
+          const p2 = video.play();
+          if (p2 && typeof p2.catch === 'function') {
+            p2.then(() => setIsPlaying(true)).catch(() => setVideoError(true));
+          } else {
+            setIsPlaying(true);
+          }
+        });
+    } else {
+      setIsPlaying(true);
     }
-    setIsPlaying(true);
-  };
+  }, [isPlaying, videoError]);
+
+  // Auto-play intro as soon as it's ready — muted, so it never gets blocked.
+  // This eliminates the "clash" because the browser already has frames buffered.
+  useEffect(() => {
+    if (stage !== 'intro') return;
+    const video = introVideoRef.current;
+    if (!video) return;
+
+    const onReady = () => {
+      setIntroReady(true);
+      try {
+        video.playbackRate = 1.5;
+      } catch {}
+      video.muted = true;
+      const p = video.play();
+      if (p && typeof p.catch === 'function') {
+        p.then(() => setIsPlaying(true)).catch(() => {
+          // Autoplay fully blocked — wait for user tap
+          setIsPlaying(false);
+        });
+      } else {
+        setIsPlaying(true);
+      }
+    };
+
+    // If already buffered enough
+    if (video.readyState >= 2) {
+      onReady();
+      return;
+    }
+
+    video.addEventListener('canplay', onReady, { once: true });
+    return () => {
+      video.removeEventListener('canplay', onReady);
+    };
+  }, [stage]);
 
   const handleVideoEnded = useCallback((event: EventItem): void => {
     event.setWatched(true);
@@ -371,7 +422,7 @@ export default function WeddingLandingPage({
   ): Promise<void> => {
     setIsSubmitting(true);
     const prev = rsvpStatus;
-    setRsvpStatus(status); // optimistic
+    setRsvpStatus(status);
     try {
       const response = await fetch('/api/rsvp', {
         method: 'POST',
@@ -491,38 +542,57 @@ export default function WeddingLandingPage({
         stage !== 'intro' ? 'pb-24' : ''
       }`}
     >
-      {/* ==================== INTRO GATE — no skip, 1.8x, plays to end ==================== */}
+      {/* ==================== INTRO GATE — smooth auto-play ==================== */}
       {stage === 'intro' && (
-        <div
-          onClick={handleIntroPlay}
-          className="fixed inset-0 w-full h-full bg-black z-[60] flex items-center justify-center cursor-pointer"
-        >
+        <div className="fixed inset-0 w-full h-full bg-black z-[60] flex items-center justify-center">
           {videoError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 p-6 text-center">
               <p className="text-sm text-zinc-400 mb-4 font-light">
                 Cinematic intro unavailable
               </p>
               <button
-                onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  e.stopPropagation();
-                  setStage('unlocked');
-                }}
+                onClick={() => setStage('unlocked')}
                 className="px-8 py-3.5 rounded-full bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-semibold uppercase tracking-[0.2em] shadow-2xl"
               >
                 Enter Invitation
               </button>
             </div>
           ) : (
-            <video
-              ref={introVideoRef}
-              src="/v.mp4"
-              className="w-full h-full object-cover"
-              playsInline
-              preload="auto"
-              muted
-              onError={() => setVideoError(true)}
-              onEnded={() => setStage('unlocked')}
-            />
+            <>
+              <video
+                ref={introVideoRef}
+                src="/v.mp4"
+                className="w-full h-full object-cover"
+                playsInline
+                preload="auto"
+                muted
+                // Prevent any internal buffering stall from showing a broken frame
+                disablePictureInPicture
+                controls={false}
+                onError={() => setVideoError(true)}
+                onEnded={() => setStage('unlocked')}
+              />
+
+              {/* Loading shimmer — hides the initial frame so it never feels broken */}
+              {!introReady && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-[65] pointer-events-none">
+                  <div className="w-12 h-12 rounded-full border-2 border-rose-300/30 border-t-rose-300 animate-spin mb-4" />
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-rose-200/70 font-semibold">
+                    Preparing your invitation…
+                  </p>
+                </div>
+              )}
+
+              {/* Tap to enable sound (only shows if user needs to unmute) */}
+              {introReady && isPlaying && (
+                <button
+                  onClick={handleIntroPlay}
+                  className="absolute top-6 right-6 z-[70] px-4 py-2 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-black/80 transition-all shadow-xl"
+                >
+                  🔊 Sound On
+                </button>
+              )}
+            </>
           )}
 
           <div className="absolute inset-x-6 bottom-12 z-50 pointer-events-none flex justify-center">
@@ -537,9 +607,9 @@ export default function WeddingLandingPage({
               <h2 className="text-lg font-serif text-white font-bold tracking-wide capitalize truncate">
                 {guestTitle} {guestName}
               </h2>
-              {!isPlaying && (
-                <p className="text-[10px] text-rose-200/80 font-light mt-1 tracking-wider uppercase animate-pulse">
-                  Tap anywhere to play intro
+              {introReady && isPlaying && (
+                <p className="text-[10px] text-rose-200/80 font-light mt-1 tracking-wider uppercase">
+                  ✦ Enjoy the moment ✦
                 </p>
               )}
             </div>
@@ -681,6 +751,7 @@ export default function WeddingLandingPage({
                   playsInline
                   preload={idx === 0 ? 'auto' : 'metadata'}
                   controls={false}
+                  disablePictureInPicture
                   onEnded={() => handleVideoEnded(event)}
                   onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
                     e.preventDefault()
@@ -704,8 +775,6 @@ export default function WeddingLandingPage({
                   />
                 </div>
 
-                {/* NOTE: No play-lock overlay — user can scroll freely anytime */}
-
                 {/* ===== EVENT BADGE ===== */}
                 <div className="absolute top-6 inset-x-0 z-20 text-center px-4 pointer-events-none">
                   <span
@@ -717,7 +786,7 @@ export default function WeddingLandingPage({
                   </span>
                 </div>
 
-                {/* ===== SCROLL HINT — always visible so user knows they can scroll ===== */}
+                {/* ===== SCROLL HINT ===== */}
                 <div className="absolute bottom-8 inset-x-0 z-20 text-center px-4 pointer-events-none">
                   {isPlayingThis && !isWatched ? (
                     <p className="text-[9px] uppercase tracking-[0.3em] text-white/60 font-semibold animate-pulse">
