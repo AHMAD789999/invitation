@@ -1,7 +1,7 @@
 // app/invite/[token]/WeddingLandingPage.tsx
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 // ==================== TYPES ====================
 interface Wedding {
@@ -129,85 +129,108 @@ export default function WeddingLandingPage({
   const groomImage = wedding.groom_image || null;
   const brideImage = wedding.bride_image || null;
 
-  // ==================== ALL EVENTS ====================
-  const allEvents: EventItem[] = [
-    {
-      id: 'mehndi',
-      name: 'Mehndi Celebration',
-      emoji: '🌿',
-      video: '/mm.mp4',
-      color: 'amber',
-      date: wedding.mehndi_date,
-      time: wedding.mehndi_time,
-      venue: wedding.mehndi_venue,
-      mapLink: wedding.mehndi_map_url,
-      ref: mehndiVideoRef,
-      watched: mehndiWatched,
-      setWatched: setMehndiWatched,
-      invitedKey: 'Mehndi',
-      ayat: {
-        arabic:
-          'وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً',
-        translation:
-          'And among His signs is that He created for you mates from among yourselves, that you may dwell in tranquility with them, and He has put love and mercy between your hearts.',
-        reference: 'Surah Ar-Rum 30:21',
+  // ==================== ALL EVENTS (memoized) ====================
+  const allEvents: EventItem[] = useMemo(
+    () => [
+      {
+        id: 'mehndi',
+        name: 'Mehndi Celebration',
+        emoji: '🌿',
+        video: '/mm.mp4',
+        color: 'amber',
+        date: wedding.mehndi_date,
+        time: wedding.mehndi_time,
+        venue: wedding.mehndi_venue,
+        mapLink: wedding.mehndi_map_url,
+        ref: mehndiVideoRef,
+        watched: mehndiWatched,
+        setWatched: setMehndiWatched,
+        invitedKey: 'Mehndi',
+        ayat: {
+          arabic:
+            'وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً',
+          translation:
+            'And among His signs is that He created for you mates from among yourselves, that you may dwell in tranquility with them, and He has put love and mercy between your hearts.',
+          reference: 'Surah Ar-Rum 30:21',
+        },
       },
-    },
-    {
-      id: 'barat',
-      name: 'Nikkah & Barat',
-      emoji: '💍',
-      video: '/nn.mp4',
-      color: 'rose',
-      date: wedding.barat_date,
-      time: wedding.barat_time,
-      venue: wedding.barat_venue,
-      mapLink: wedding.barat_map_url,
-      ref: baratVideoRef,
-      watched: baratWatched,
-      setWatched: setBaratWatched,
-      invitedKey: 'Barat',
-      ayat: {
-        arabic:
-          'بَارَكَ اللَّهُ لَكَ وَبَارَكَ عَلَيْكَ وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
-        translation:
-          'May Allah bless you, and shower His blessings upon you, and join you together in goodness.',
-        reference: 'Sunan Abu Dawud 2130',
+      {
+        id: 'barat',
+        name: 'Nikkah & Barat',
+        emoji: '💍',
+        video: '/nn.mp4',
+        color: 'rose',
+        date: wedding.barat_date,
+        time: wedding.barat_time,
+        venue: wedding.barat_venue,
+        mapLink: wedding.barat_map_url,
+        ref: baratVideoRef,
+        watched: baratWatched,
+        setWatched: setBaratWatched,
+        invitedKey: 'Barat',
+        ayat: {
+          arabic:
+            'بَارَكَ اللَّهُ لَكَ وَبَارَكَ عَلَيْكَ وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
+          translation:
+            'May Allah bless you, and shower His blessings upon you, and join you together in goodness.',
+          reference: 'Sunan Abu Dawud 2130',
+        },
       },
-    },
-    {
-      id: 'walima',
-      name: 'Walima Reception',
-      emoji: '✨',
-      video: '/ww.mp4',
-      color: 'emerald',
-      date: wedding.walima_date,
-      time: wedding.walima_time,
-      venue: wedding.walima_venue,
-      mapLink: wedding.walima_map_url,
-      ref: walimaVideoRef,
-      watched: walimaWatched,
-      setWatched: setWalimaWatched,
-      invitedKey: 'Walima',
-      ayat: {
-        arabic:
-          'وَإِذَا حُيِّيتُم بِتَحِيَّةٍ فَحَيُّوا بِأَحْسَنَ مِنْهَا أَوْ رُدُّوهَا',
-        translation:
-          'And when you are greeted with a greeting, greet with a better greeting or return it. Indeed Allah is ever, over all things, an Accountant.',
-        reference: 'Surah An-Nisa 4:86',
+      {
+        id: 'walima',
+        name: 'Walima Reception',
+        emoji: '✨',
+        video: '/ww.mp4',
+        color: 'emerald',
+        date: wedding.walima_date,
+        time: wedding.walima_time,
+        venue: wedding.walima_venue,
+        mapLink: wedding.walima_map_url,
+        ref: walimaVideoRef,
+        watched: walimaWatched,
+        setWatched: setWalimaWatched,
+        invitedKey: 'Walima',
+        ayat: {
+          arabic:
+            'وَإِذَا حُيِّيتُم بِتَحِيَّةٍ فَحَيُّوا بِأَحْسَنَ مِنْهَا أَوْ رُدُّوهَا',
+          translation:
+            'And when you are greeted with a greeting, greet with a better greeting or return it. Indeed Allah is ever, over all things, an Accountant.',
+          reference: 'Surah An-Nisa 4:86',
+        },
       },
-    },
-  ];
+    ],
+    [
+      wedding.mehndi_date,
+      wedding.mehndi_time,
+      wedding.mehndi_venue,
+      wedding.mehndi_map_url,
+      wedding.barat_date,
+      wedding.barat_time,
+      wedding.barat_venue,
+      wedding.barat_map_url,
+      wedding.walima_date,
+      wedding.walima_time,
+      wedding.walima_venue,
+      wedding.walima_map_url,
+      mehndiWatched,
+      baratWatched,
+      walimaWatched,
+    ]
+  );
 
   // ==================== FILTER ====================
   const invitedEventsNormalized = (invitedEvents || []).map((e: string) =>
     String(e).toLowerCase().trim()
   );
 
-  const events = allEvents.filter((e: EventItem) => {
-    if (invitedEventsNormalized.length === 0) return true;
-    return invitedEventsNormalized.includes(e.invitedKey.toLowerCase());
-  });
+  const events = useMemo(
+    () =>
+      allEvents.filter((e: EventItem) => {
+        if (invitedEventsNormalized.length === 0) return true;
+        return invitedEventsNormalized.includes(e.invitedKey.toLowerCase());
+      }),
+    [allEvents, invitedEventsNormalized.join(',')]
+  );
 
   // ==================== COLOR MAP ====================
   const colorMap: Record<string, ColorScheme> = {
@@ -249,7 +272,7 @@ export default function WeddingLandingPage({
     };
   }, [stage, activeEventId]);
 
-  // ==================== INTERSECTION OBSERVER ====================
+  // ==================== INTERSECTION OBSERVER (FAST) ====================
   useEffect(() => {
     if (stage !== 'unlocked') return;
     if (events.length === 0) return;
@@ -266,20 +289,32 @@ export default function WeddingLandingPage({
             const video = event.ref.current;
             if (!video) return;
 
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.7) {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
               if (!event.watched) {
                 setActiveEventId(event.id);
-                video.currentTime = 0;
+                // Fast start — skip to start and play immediately
+                try {
+                  video.currentTime = 0;
+                } catch {}
                 video.muted = false;
-                video.play().catch(() => {
-                  video.muted = true;
-                  video.play().catch((err: unknown) => console.log('Autoplay failed:', err));
-                });
+                const p = video.play();
+                if (p && typeof p.catch === 'function') {
+                  p.catch(() => {
+                    video.muted = true;
+                    video.play().catch(() => {});
+                  });
+                }
               }
+            } else if (!entry.isIntersecting && activeEventId === event.id) {
+              // Pause when scrolled away to free resources
+              try {
+                video.pause();
+              } catch {}
             }
           });
         },
-        { threshold: [0.5, 0.7, 0.9] }
+        // Lower threshold so it triggers faster, plus rootMargin to pre-trigger
+        { threshold: [0.3, 0.5, 0.7], rootMargin: '0px 0px -10% 0px' }
       );
 
       observer.observe(section);
@@ -289,7 +324,7 @@ export default function WeddingLandingPage({
     return () => {
       observers.forEach((obs: IntersectionObserver) => obs.disconnect());
     };
-  }, [stage, mehndiWatched, baratWatched, walimaWatched, events.length]);
+  }, [stage, mehndiWatched, baratWatched, walimaWatched, events.length, activeEventId]);
 
   // ==================== HANDLERS ====================
   const handleIntroPlay = (): void => {
@@ -298,7 +333,8 @@ export default function WeddingLandingPage({
         introVideoRef.current.pause();
         setIsPlaying(false);
       } else {
-        introVideoRef.current.play().catch(() => setVideoError(true));
+        const p = introVideoRef.current.play();
+        if (p && typeof p.catch === 'function') p.catch(() => setVideoError(true));
         setIsPlaying(true);
       }
     }
@@ -313,6 +349,9 @@ export default function WeddingLandingPage({
     status: 'attending' | 'not_attending' | 'maybe'
   ): Promise<void> => {
     setIsSubmitting(true);
+    // Optimistic update — feels instant
+    const prev = rsvpStatus;
+    setRsvpStatus(status);
     try {
       const response = await fetch('/api/rsvp', {
         method: 'POST',
@@ -322,12 +361,12 @@ export default function WeddingLandingPage({
           rsvpStatus: status,
         }),
       });
-
-      if (response.ok) {
-        setRsvpStatus(status);
+      if (!response.ok) {
+        setRsvpStatus(prev);
       }
     } catch (err: unknown) {
       console.error('Error updating RSVP:', err);
+      setRsvpStatus(prev);
     } finally {
       setIsSubmitting(false);
     }
@@ -369,18 +408,18 @@ export default function WeddingLandingPage({
     }
   };
 
-  const scrollToSection = (id: string): void => {
+  const scrollToSection = useCallback((id: string): void => {
     setActiveTab(id);
     const element = document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  };
+  }, []);
 
   const hasFamilyMembers = familyMembers && familyMembers.length > 0;
 
   // ==================== RSVP MESSAGES ====================
-  const getRsvpMessage = () => {
+  const rsvpMessage = useMemo(() => {
     if (rsvpStatus === 'attending') {
       return {
         emoji: '🎉',
@@ -423,9 +462,7 @@ export default function WeddingLandingPage({
       border: 'border-rose-300/30',
       textColor: 'text-rose-200',
     };
-  };
-
-  const rsvpMessage = getRsvpMessage();
+  }, [rsvpStatus, guestTitle, guestName]);
 
   // ==================== RENDER ====================
   return (
@@ -502,6 +539,7 @@ export default function WeddingLandingPage({
             loop
             muted
             playsInline
+            preload="metadata"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/40 to-black/90"></div>
         </div>
@@ -537,6 +575,8 @@ export default function WeddingLandingPage({
                       src={groomImage}
                       alt={groomName}
                       className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
                     />
                   </div>
                 )}
@@ -547,6 +587,8 @@ export default function WeddingLandingPage({
                       src={brideImage}
                       alt={brideName}
                       className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
                     />
                   </div>
                 )}
@@ -610,13 +652,13 @@ export default function WeddingLandingPage({
                 id={`event-${event.id}`}
                 className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
               >
-                {/* ===== FULL SCREEN VIDEO FROM TOP ===== */}
+                {/* ===== FULL SCREEN VIDEO — lazy, fast start ===== */}
                 <video
                   ref={event.ref}
                   src={event.video}
                   className="absolute inset-0 w-full h-full object-cover z-0"
                   playsInline
-                  preload="auto"
+                  preload={idx === 0 ? 'auto' : 'metadata'}
                   controls={false}
                   onEnded={() => handleVideoEnded(event)}
                   onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
@@ -624,17 +666,12 @@ export default function WeddingLandingPage({
                   }
                 />
 
-                {/* ===== CINEMATIC GRADIENT OVERLAYS ===== */}
+                {/* ===== CINEMATIC OVERLAYS (lighter) ===== */}
                 <div className="absolute inset-0 z-[1] pointer-events-none">
-                  {/* Top vignette */}
                   <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
-                  {/* Bottom vignette */}
                   <div className="absolute bottom-0 inset-x-0 h-56 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-                  {/* Left vignette */}
                   <div className="absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black/50 to-transparent" />
-                  {/* Right vignette */}
                   <div className="absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black/50 to-transparent" />
-                  {/* Themed color glow at bottom */}
                   <div
                     className={`absolute bottom-0 inset-x-0 h-48 bg-gradient-to-t ${
                       event.color === 'amber'
@@ -643,16 +680,6 @@ export default function WeddingLandingPage({
                         ? 'from-rose-500/20'
                         : 'from-emerald-500/20'
                     } via-transparent to-transparent opacity-70`}
-                  />
-                  {/* Subtle top themed glow */}
-                  <div
-                    className={`absolute top-0 inset-x-0 h-32 bg-gradient-to-b ${
-                      event.color === 'amber'
-                        ? 'from-amber-500/10'
-                        : event.color === 'rose'
-                        ? 'from-rose-500/10'
-                        : 'from-emerald-500/10'
-                    } via-transparent to-transparent opacity-50`}
                   />
                 </div>
 
@@ -672,7 +699,7 @@ export default function WeddingLandingPage({
                   />
                 )}
 
-                {/* ===== EVENT BADGE — TOP OF SCREEN ===== */}
+                {/* ===== EVENT BADGE ===== */}
                 <div className="absolute top-6 inset-x-0 z-20 text-center px-4 pointer-events-none">
                   <span
                     className={`text-[9px] uppercase tracking-[0.3em] ${colors.text} font-bold bg-black/70 px-5 py-2 rounded-full border ${colors.border} backdrop-blur-md shadow-2xl inline-block`}
@@ -683,7 +710,7 @@ export default function WeddingLandingPage({
                   </span>
                 </div>
 
-                {/* ===== PLAYING INDICATOR — BOTTOM ===== */}
+                {/* ===== PLAYING INDICATOR ===== */}
                 {isPlayingThis && !isWatched && (
                   <div className="absolute bottom-8 inset-x-0 z-20 text-center px-4 pointer-events-none">
                     <p className="text-[9px] uppercase tracking-[0.3em] text-white/60 font-semibold animate-pulse">
@@ -692,7 +719,7 @@ export default function WeddingLandingPage({
                   </div>
                 )}
 
-                {/* ===== WATCHED DETAILS CARD — BOTTOM ===== */}
+                {/* ===== WATCHED DETAILS CARD ===== */}
                 {isWatched && (
                   <div className="absolute bottom-0 inset-x-0 z-40 p-5 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-fade-in max-w-md mx-auto w-full max-h-[85vh] overflow-y-auto">
                     <span
@@ -726,7 +753,6 @@ export default function WeddingLandingPage({
                       )}
                     </div>
 
-                    {/* AYAT */}
                     {event.ayat && (
                       <div
                         className={`relative p-4 rounded-2xl ${colors.bg} border ${colors.border} mb-3 overflow-hidden`}
@@ -818,6 +844,8 @@ export default function WeddingLandingPage({
                         src={groomImage}
                         alt={groomName}
                         className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                     </div>
                     <p className="text-xs font-semibold text-white capitalize">
@@ -838,6 +866,8 @@ export default function WeddingLandingPage({
                         src={brideImage}
                         alt={brideName}
                         className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                     </div>
                     <p className="text-xs font-semibold text-white capitalize">
@@ -870,6 +900,8 @@ export default function WeddingLandingPage({
                         src={member.profile_image}
                         alt={member.name}
                         className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                     </div>
                   ) : (
