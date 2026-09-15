@@ -610,10 +610,11 @@ export default function WeddingLandingPage({
                 id={`event-${event.id}`}
                 className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
               >
+                {/* Event Video - positioned at top-[70px] */}
                 <video
                   ref={event.ref}
                   src={event.video}
-                  className="absolute inset-0 top-[-80px] w-full h-full object-cover z-0"
+                  className="absolute inset-x-0 top-[70px] w-full h-[calc(100%-70px)] object-cover z-0"
                   playsInline
                   preload="auto"
                   controls={false}
@@ -623,9 +624,31 @@ export default function WeddingLandingPage({
                   }
                 />
 
+                {/* Cinematic gradient overlays for amazing look */}
+                <div className="absolute inset-x-0 top-[70px] h-[calc(100%-70px)] z-[1] pointer-events-none">
+                  {/* Top vignette */}
+                  <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-black/60 via-black/20 to-transparent" />
+                  {/* Bottom vignette */}
+                  <div className="absolute bottom-0 inset-x-0 h-48 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                  {/* Side vignettes for cinematic feel */}
+                  <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-black/50 to-transparent" />
+                  <div className="absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-black/50 to-transparent" />
+                  {/* Subtle color glow matching event theme */}
+                  <div
+                    className={`absolute bottom-0 inset-x-0 h-40 bg-gradient-to-t ${
+                      event.color === 'amber'
+                        ? 'from-amber-500/15'
+                        : event.color === 'rose'
+                        ? 'from-rose-500/15'
+                        : 'from-emerald-500/15'
+                    } via-transparent to-transparent opacity-60`}
+                  />
+                </div>
+
+                {/* Play lock overlay */}
                 {isPlayingThis && !isWatched && (
                   <div
-                    className="absolute inset-0 z-30 cursor-not-allowed"
+                    className="absolute inset-0 top-[70px] z-30 cursor-not-allowed"
                     onContextMenu={(e: React.MouseEvent<HTMLDivElement>) =>
                       e.preventDefault()
                     }
@@ -638,14 +661,16 @@ export default function WeddingLandingPage({
                   />
                 )}
 
-                <div className="absolute top-[-50px] inset-x-0 z-20 text-center px-4 pointer-events-none">
+                {/* Event badge - floating at top */}
+                <div className="absolute top-[85px] inset-x-0 z-20 text-center px-4 pointer-events-none">
                   <span
-                    className={`text-[9px] uppercase tracking-[0.3em] ${colors.text} font-bold bg-black/70 px-4 py-1.5 rounded-full border ${colors.border} backdrop-blur-md shadow-xl`}
+                    className={`text-[9px] uppercase tracking-[0.3em] ${colors.text} font-bold bg-black/70 px-4 py-1.5 rounded-full border ${colors.border} backdrop-blur-md shadow-xl inline-block`}
                   >
                     Celebration {String(idx + 1).padStart(2, '0')}: {event.name}
                   </span>
                 </div>
 
+                {/* Watched details card */}
                 {isWatched && (
                   <div className="absolute bottom-50 inset-x-0 z-40 p-5 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-fade-in max-w-md mx-auto w-full max-h-[85vh] overflow-y-auto">
                     <span
