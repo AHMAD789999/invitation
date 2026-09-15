@@ -260,40 +260,10 @@ export default function WeddingLandingPage({
     },
   };
 
-  // ==================== INTRO VIDEO — FAST + 1.5x SPEED ====================
+  // ==================== SCROLL LOCK — NEVER LOCK ON EVENTS ====================
   useEffect(() => {
-    if (stage !== 'intro') return;
-    const video = introVideoRef.current;
-    if (!video) return;
-
-    // Speed up intro so users get in faster
-    video.playbackRate = 1.5;
-
-    // Try autoplay muted first (browsers allow this), then unmute
-    video.muted = true;
-    const tryPlay = video.play();
-    if (tryPlay && typeof tryPlay.catch === 'function') {
-      tryPlay
-        .then(() => {
-          setIsPlaying(true);
-          // Try to unmute after play starts
-          setTimeout(() => {
-            if (video) {
-              video.muted = false;
-            }
-          }, 300);
-        })
-        .catch(() => {
-          // Autoplay blocked — wait for user tap
-          setIsPlaying(false);
-        });
-    }
-  }, [stage]);
-
-  // ==================== SCROLL LOCK ====================
-  useEffect(() => {
-    // Only lock scroll during intro if user hasn't started scrolling yet
-    const shouldLock = stage === 'intro' || activeEventId !== null;
+    // Only lock scroll during intro stage
+    const shouldLock = stage === 'intro';
     document.body.style.overflow = shouldLock ? 'hidden' : 'auto';
     document.documentElement.style.overflow = shouldLock ? 'hidden' : 'auto';
 
@@ -301,9 +271,11 @@ export default function WeddingLandingPage({
       document.body.style.overflow = 'auto';
       document.documentElement.style.overflow = 'auto';
     };
-  }, [stage, activeEventId]);
+  }, [stage]);
 
-  // ==================== INTERSECTION OBSERVER (FAST) ====================
+  // ==================== INTERSECTION OBSERVER ====================
+  // Watches events: auto-plays when visible, pauses when scrolled away.
+  // Does NOT lock scroll — user can scroll freely at any time.
   useEffect(() => {
     if (stage !== 'unlocked') return;
     if (events.length === 0) return;
@@ -324,10 +296,11 @@ export default function WeddingLandingPage({
               if (!event.watched) {
                 setActiveEventId(event.id);
                 try {
-                  video.currentTime = 0;
+                  if (video.currentTime === 0 || video.paused) {
+                    video.currentTime = 0;
+                  }
                 } catch {}
                 video.muted = false;
-                // Events play slightly faster too so users don't wait long
                 video.playbackRate = 1.25;
                 const p = video.play();
                 if (p && typeof p.catch === 'function') {
@@ -337,10 +310,16 @@ export default function WeddingLandingPage({
                   });
                 }
               }
-            } else if (!entry.isIntersecting && activeEventId === event.id) {
-              try {
-                video.pause();
-              } catch {}
+            } else if (!entry.isIntersecting) {
+              // Pause when scrolled away — frees resources
+              if (!video.paused) {
+                try {
+                  video.pause();
+                } catch {}
+              }
+              if (activeEventId === event.id) {
+                setActiveEventId(null);
+              }
             }
           });
         },
@@ -356,32 +335,30 @@ export default function WeddingLandingPage({
     };
   }, [stage, mehndiWatched, baratWatched, walimaWatched, events.length, activeEventId]);
 
-  // ==================== HANDLERS ====================
+  // ==================== INTRO HANDLER — 1.8x SPEED ====================
   const handleIntroPlay = (): void => {
-    if (introVideoRef.current && !videoError) {
-      if (isPlaying) {
-        introVideoRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        const video = introVideoRef.current;
-        video.playbackRate = 1.5;
-        video.muted = false;
-        const p = video.play();
-        if (p && typeof p.catch === 'function') p.catch(() => setVideoError(true));
-        setIsPlaying(true);
-      }
-    }
-  };
+    if (!introVideoRef.current || videoError) return;
+    const video = introVideoRef.current;
 
-  // User can skip intro anytime — tap "Skip" button
-  const handleSkipIntro = (e: React.MouseEvent<HTMLButtonElement>): void => {
-    e.stopPropagation();
-    if (introVideoRef.current) {
-      try {
-        introVideoRef.current.pause();
-      } catch {}
+    if (isPlaying) {
+      video.pause();
+      setIsPlaying(false);
+      return;
     }
-    setStage('unlocked');
+
+    // Play at 1.8x speed — no skip, intro flows fast to the end
+    video.playbackRate = 1.8;
+    video.muted = false;
+    const p = video.play();
+    if (p && typeof p.catch === 'function') {
+      // If unmuted autoplay is blocked, fallback to muted play at 1.8x
+      p.catch(() => {
+        video.muted = true;
+        video.playbackRate = 1.8;
+        video.play().catch(() => setVideoError(true));
+      });
+    }
+    setIsPlaying(true);
   };
 
   const handleVideoEnded = useCallback((event: EventItem): void => {
@@ -514,7 +491,7 @@ export default function WeddingLandingPage({
         stage !== 'intro' ? 'pb-24' : ''
       }`}
     >
-      {/* ==================== INTRO GATE ==================== */}
+      {/* ==================== INTRO GATE — no skip, 1.8x, plays to end ==================== */}
       {stage === 'intro' && (
         <div
           onClick={handleIntroPlay}
@@ -526,10 +503,13 @@ export default function WeddingLandingPage({
                 Cinematic intro unavailable
               </p>
               <button
-                onClick={handleSkipIntro}
+                onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                  e.stopPropagation();
+                  setStage('unlocked');
+                }}
                 className="px-8 py-3.5 rounded-full bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-semibold uppercase tracking-[0.2em] shadow-2xl"
               >
-                Skip Intro & Enter Invitation
+                Enter Invitation
               </button>
             </div>
           ) : (
@@ -544,14 +524,6 @@ export default function WeddingLandingPage({
               onEnded={() => setStage('unlocked')}
             />
           )}
-
-          {/* Skip Intro button — always available, top-right */}
-          <button
-            onClick={handleSkipIntro}
-            className="absolute top-6 right-6 z-[70] px-4 py-2 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-black/80 transition-all shadow-xl"
-          >
-            Skip ⏭
-          </button>
 
           <div className="absolute inset-x-6 bottom-12 z-50 pointer-events-none flex justify-center">
             <div className="relative inline-block max-w-xs w-full bg-black/60 backdrop-blur-xl border border-rose-300/30 rounded-2xl px-5 py-3 text-center shadow-2xl ring-1 ring-white/15">
@@ -732,21 +704,7 @@ export default function WeddingLandingPage({
                   />
                 </div>
 
-                {/* ===== PLAY LOCK OVERLAY ===== */}
-                {isPlayingThis && !isWatched && (
-                  <div
-                    className="absolute inset-0 z-30 cursor-not-allowed"
-                    onContextMenu={(e: React.MouseEvent<HTMLDivElement>) =>
-                      e.preventDefault()
-                    }
-                    onTouchMove={(e: React.TouchEvent<HTMLDivElement>) =>
-                      e.preventDefault()
-                    }
-                    onWheel={(e: React.WheelEvent<HTMLDivElement>) =>
-                      e.preventDefault()
-                    }
-                  />
-                )}
+                {/* NOTE: No play-lock overlay — user can scroll freely anytime */}
 
                 {/* ===== EVENT BADGE ===== */}
                 <div className="absolute top-6 inset-x-0 z-20 text-center px-4 pointer-events-none">
@@ -759,14 +717,18 @@ export default function WeddingLandingPage({
                   </span>
                 </div>
 
-                {/* ===== PLAYING INDICATOR ===== */}
-                {isPlayingThis && !isWatched && (
-                  <div className="absolute bottom-8 inset-x-0 z-20 text-center px-4 pointer-events-none">
+                {/* ===== SCROLL HINT — always visible so user knows they can scroll ===== */}
+                <div className="absolute bottom-8 inset-x-0 z-20 text-center px-4 pointer-events-none">
+                  {isPlayingThis && !isWatched ? (
                     <p className="text-[9px] uppercase tracking-[0.3em] text-white/60 font-semibold animate-pulse">
-                      ✦ Experience the moment ✦
+                      ✦ Scroll freely • Details unlock when video ends ✦
                     </p>
-                  </div>
-                )}
+                  ) : !isWatched ? (
+                    <p className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-semibold animate-pulse">
+                      ✦ Scroll to play next event ✦
+                    </p>
+                  ) : null}
+                </div>
 
                 {/* ===== WATCHED DETAILS CARD ===== */}
                 {isWatched && (
