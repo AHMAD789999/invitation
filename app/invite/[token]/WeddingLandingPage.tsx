@@ -608,7 +608,7 @@ export default function WeddingLandingPage({
               <section
                 key={event.id}
                 id={`event-${event.id}`}
-                className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
+                className="relative top-[-10px] w-full h-screen overflow-hidden bg-black border-b border-white/10"
               >
                 <video
                   ref={event.ref}
