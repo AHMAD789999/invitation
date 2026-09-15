@@ -613,7 +613,7 @@ export default function WeddingLandingPage({
                 <video
                   ref={event.ref}
                   src={event.video}
-                  className="absolute inset-0 top-[-260px] w-full h-full object-cover z-0"
+                  className="absolute inset-0 top-[-90px] w-full h-full object-cover z-0"
                   playsInline
                   preload="auto"
                   controls={false}
