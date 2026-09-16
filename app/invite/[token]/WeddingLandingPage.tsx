@@ -455,21 +455,21 @@ END:VCALENDAR`;
             />
           )}
 
-          {/* Golden Themed Guest Intro Div */}
+          {/* Golden Themed Guest Intro Div (Restyled with luxurious golden theme) */}
           <div className="absolute inset-x-4 bottom-10 z-50 pointer-events-none flex justify-center font-sans">
-            <div className="relative max-w-sm w-full bg-gradient-to-b from-[#2C241B]/80 to-[#1A140E]/90 backdrop-blur-xl border-2 border-[#D4AF37]/70 rounded-3xl px-6 py-5 text-center shadow-[0_10px_30px_rgba(212,175,55,0.25)] ring-1 ring-[#F4E8D1]/30">
+            <div className="relative max-w-sm w-full bg-gradient-to-b from-[#3D311E] via-[#2A2114] to-[#1F170D] backdrop-blur-xl border-2 border-[#EAD39C]/90 rounded-3xl px-6 py-5 text-center shadow-[0_12px_40px_rgba(212,175,55,0.4)] ring-2 ring-[#F4E8D1]/40">
               <div className="flex items-center justify-center space-x-2 mb-1.5">
-                <span className="text-xs text-[#D4AF37]">✨</span>
-                <span className="text-[10px] uppercase tracking-[0.35em] text-[#E8D3A7] font-bold drop-shadow">
+                <span className="text-xs text-[#F4E8D1]">✨</span>
+                <span className="text-[10px] uppercase tracking-[0.35em] text-[#F7E7C4] font-bold drop-shadow">
                   VIP Invitation For
                 </span>
-                <span className="text-xs text-[#D4AF37]">✨</span>
+                <span className="text-xs text-[#F4E8D1]">✨</span>
               </div>
-              <h2 className="text-xl font-serif text-[#F4E8D1] font-normal tracking-wide capitalize truncate drop-shadow-md">
+              <h2 className="text-xl font-serif text-[#FFF4DE] font-normal tracking-wide capitalize truncate drop-shadow-md">
                 {guestTitle} {guestName}
               </h2>
               {!isPlaying && (
-                <p className="text-[10px] text-[#D4AF37] font-medium mt-2 tracking-widest uppercase animate-pulse">
+                <p className="text-[10px] text-[#EAD39C] font-medium mt-2 tracking-widest uppercase animate-pulse">
                   Tap screen to unlock
                 </p>
               )}
@@ -478,7 +478,7 @@ END:VCALENDAR`;
         </div>
       )}
 
-      {/* ==================== 2. HERO SECTION (Lighter Overlay Applied) ==================== */}
+      {/* ==================== 2. HERO SECTION ==================== */}
       <section id="home" className="relative w-full min-h-screen flex flex-col justify-end overflow-hidden">
         <div className="absolute inset-0 w-full h-full z-0 bg-[#12100E]">
           <video
@@ -492,7 +492,6 @@ END:VCALENDAR`;
             preload="auto"
             poster={IMAGES.HERO_FALLBACK}
           />
-          {/* Lighter overlay to let the video shine through brighter */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#12100E]/70 via-[#12100E]/20 to-black/10"></div>
         </div>
 
