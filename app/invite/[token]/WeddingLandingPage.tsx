@@ -21,6 +21,11 @@ export interface EventDetails {
   address?: string;
   google_map_url?: string;
   invited?: boolean;
+  ayat?: {
+    arabic?: string;
+    text?: string;
+    reference?: string;
+  };
 }
 
 export interface AyatData {
@@ -100,6 +105,30 @@ const IMAGES = {
   HERO_FALLBACK: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=1920',
 };
 
+// ==================== DEFAULT EVENT AYAT FALLBACKS ====================
+const DEFAULT_EVENT_AYATS: Record<string, { arabic: string; text: string; reference: string }> = {
+  mehndi: {
+    arabic: 'رَبَّنَا هَبْ لَنَا مِنْ أَزْوَاجِنَا وَذُرِّيَّاتِنَا قُرَّةَ أَعْيُنٍ وَاجْعَلْنَا لِلْمُتَّقِينَ إِمَامًا',
+    text: '"Our Lord, grant us from among our wives and offspring comfort to our eyes and make us an example for the righteous."',
+    reference: 'SURAH AL-FURQAN (25:74)',
+  },
+  barat: {
+    arabic: 'وَأَلَّفَ بَيْنَ قُلُوبِهِمْ ۚ لَوْ أَنفَقْتَ مَا فِي الْأَرْضِ جَمِيعًا مَّا أَلَّفْتَ بَيْنَ قُلُوبِهِمْ وَلَٰكِنَّ اللَّهَ أَلَّفَ بَيْنَهُمْ',
+    text: '"And He has united their hearts. If you had spent all that is in the earth, you could not have united their hearts, but Allah has united them."',
+    reference: 'SURAH AL-ANFAL (8:63)',
+  },
+  walima: {
+    arabic: 'بَارَكَ اللَّهُ لَكَ وَبَارَكَ عَلَيْكَ وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
+    text: '"May Allah bless you, and bless you on your auspicious occasion, and unite you both in goodness."',
+    reference: 'TRADITIONAL WEDDING DUAH (HADITH)',
+  },
+  default: {
+    arabic: 'وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً',
+    text: '"And among His signs is that He created for you mates from among yourselves, that you may dwell in tranquility with them."',
+    reference: 'SURAH AR-RUM (30:21)',
+  },
+};
+
 export default function WeddingLandingPage({
   guest,
   familyMembers = [],
@@ -146,12 +175,22 @@ export default function WeddingLandingPage({
 
   const paletteColors = wedding.color_palette || ['#E2D5C3', '#C9B397', '#9CA99E', '#536155'];
 
-  // Robust Dynamic Events Extraction Logic
+  // Robust Dynamic Events Extraction Logic with Event-Specific Ayat Assignment
   const invitedEvents = useMemo(() => {
     let list: EventDetails[] = [];
 
     if (wedding?.events && wedding.events.length > 0) {
-      list = [...wedding.events];
+      list = wedding.events.map((ev) => {
+        const key = String(ev.id || ev.name).toLowerCase();
+        let matchedAyat = ev.ayat;
+        if (!matchedAyat) {
+          if (key.includes('mehndi')) matchedAyat = DEFAULT_EVENT_AYATS.mehndi;
+          else if (key.includes('barat')) matchedAyat = DEFAULT_EVENT_AYATS.barat;
+          else if (key.includes('walima')) matchedAyat = DEFAULT_EVENT_AYATS.walima;
+          else matchedAyat = DEFAULT_EVENT_AYATS.default;
+        }
+        return { ...ev, ayat: matchedAyat };
+      });
     } else {
       if (wedding?.mehndi_date || wedding?.mehndi_venue) {
         list.push({
@@ -162,6 +201,7 @@ export default function WeddingLandingPage({
           venue_name: wedding.mehndi_venue,
           google_map_url: wedding.mehndi_map_url,
           invited: true,
+          ayat: DEFAULT_EVENT_AYATS.mehndi,
         });
       }
       if (wedding?.barat_date || wedding?.barat_venue) {
@@ -173,6 +213,7 @@ export default function WeddingLandingPage({
           venue_name: wedding.barat_venue,
           google_map_url: wedding.barat_map_url,
           invited: true,
+          ayat: DEFAULT_EVENT_AYATS.barat,
         });
       }
       if (wedding?.walima_date || wedding?.walima_venue) {
@@ -184,6 +225,7 @@ export default function WeddingLandingPage({
           venue_name: wedding.walima_venue,
           google_map_url: wedding.walima_map_url,
           invited: true,
+          ayat: DEFAULT_EVENT_AYATS.walima,
         });
       }
     }
@@ -436,7 +478,7 @@ END:VCALENDAR`;
         </div>
       )}
 
-      {/* ==================== 2. HERO SECTION (Smooth Scroll Fix) ==================== */}
+      {/* ==================== 2. HERO SECTION (Lighter Overlay Applied) ==================== */}
       <section id="home" className="relative w-full min-h-screen flex flex-col justify-end overflow-hidden">
         <div className="absolute inset-0 w-full h-full z-0 bg-[#12100E]">
           <video
@@ -450,7 +492,8 @@ END:VCALENDAR`;
             preload="auto"
             poster={IMAGES.HERO_FALLBACK}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#12100E] via-[#12100E]/40 to-black/30"></div>
+          {/* Lighter overlay to let the video shine through brighter */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#12100E]/70 via-[#12100E]/20 to-black/10"></div>
         </div>
 
         <div className="relative z-10 w-full max-w-2xl mx-auto px-6 pb-12 pt-20 flex flex-col items-center justify-end text-center space-y-4 font-sans">
@@ -646,7 +689,7 @@ END:VCALENDAR`;
         </section>
       )}
 
-      {/* ==================== 6. TIMELINE & INVITED EVENTS SECTION ==================== */}
+      {/* ==================== 6. TIMELINE & EVENT-SPECIFIC AYATS SECTION ==================== */}
       {invitedEvents.length > 0 && (
         <section id="timeline-section" className="relative w-full bg-[#F3ECE4] py-20 px-6 border-b border-[#E3D7C9]">
           <div className="w-full max-w-xl mx-auto flex flex-col items-center text-center space-y-12">
@@ -661,7 +704,7 @@ END:VCALENDAR`;
               {invitedEvents.map((event, idx) => (
                 <div
                   key={event.id || idx}
-                  className="flex flex-col items-center text-center space-y-4 max-w-md mx-auto p-6 rounded-3xl bg-white/40 border border-[#EADFCF] shadow-sm backdrop-blur-sm"
+                  className="flex flex-col items-center text-center space-y-4 max-w-md mx-auto p-6 sm:p-8 rounded-3xl bg-white/40 border border-[#EADFCF] shadow-sm backdrop-blur-sm"
                 >
                   <div className="w-full max-w-sm mb-2 overflow-hidden rounded-2xl">
                     <img
@@ -677,8 +720,27 @@ END:VCALENDAR`;
 
                   <img src={IMAGES.DIVIDER} alt="Divider" className="w-24 h-auto opacity-60 my-1" />
 
+                  {/* Event-Specific Quranic Ayat / Dua Display */}
+                  {event.ayat && (
+                    <div className="w-full bg-[#FAF6F0] border border-[#E3D7C9] rounded-2xl p-4 my-2 space-y-2">
+                      <p
+                        className="text-xl sm:text-2xl text-[#8C7456] leading-loose font-arabic"
+                        dir="rtl"
+                        style={{ fontFamily: '"Amiri", "Traditional Arabic", serif' }}
+                      >
+                        {event.ayat.arabic}
+                      </p>
+                      <p className="text-xs sm:text-sm font-serif text-[#A38D6D] italic leading-relaxed">
+                        {event.ayat.text}
+                      </p>
+                      <p className="text-[9px] uppercase tracking-[0.3em] text-[#8C7A6B] font-semibold">
+                        {event.ayat.reference}
+                      </p>
+                    </div>
+                  )}
+
                   {event.date && (
-                    <p className="text-xs font-serif uppercase tracking-[0.25em] text-[#9A8878] font-light">
+                    <p className="text-xs font-serif uppercase tracking-[0.25em] text-[#9A8878] font-light pt-1">
                       {formatDisplayDate(event.date)}
                     </p>
                   )}
