@@ -1,15 +1,42 @@
-// app/invite/[token]/WeddingLandingPage.tsx
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
-// ==================== TYPES ====================
-interface Wedding {
+// ==================== TYPES & INTERFACES ====================
+export interface FamilyMemberRow {
+  id: string;
+  name: string;
+  profile_image?: string;
+  role?: string;
+  created_at?: string;
+}
+
+export interface EventDetails {
+  id?: string;
+  name: string;
+  date?: string;
+  time?: string;
+  venue_name?: string;
+  address?: string;
+  google_map_url?: string;
+  invited?: boolean;
+}
+
+export interface AyatData {
+  text?: string;
+  reference?: string;
+  arabic?: string;
+}
+
+export interface Wedding {
   id?: string;
   groom_name?: string;
   bride_name?: string;
   groom_image?: string;
   bride_image?: string;
+  couple_image?: string;
+  family_image?: string;
   mehndi_date?: string;
   mehndi_time?: string;
   mehndi_venue?: string;
@@ -26,9 +53,16 @@ interface Wedding {
   contact_number_1?: string;
   contact_person_2?: string;
   contact_number_2?: string;
+  ayat?: AyatData;
+  quote?: string;
+  quote_reference?: string;
+  quote_arabic?: string;
+  dress_code?: string;
+  color_palette?: string[];
+  events?: EventDetails[];
 }
 
-interface Guest {
+export interface Guest {
   id: string;
   name?: string;
   title_prefix?: string;
@@ -36,230 +70,242 @@ interface Guest {
   invited_events?: string[];
   personal_message?: string;
   token?: string;
-  rsvp_status?: 'pending' | 'attending' | 'not_attending' | 'maybe';
+  rsvp_status?: 'attending' | 'declined' | null;
   rsvp_updated_at?: string;
   wedding?: Wedding;
 }
 
-interface FamilyMember {
-  id: string;
-  name: string;
-  profile_image?: string;
-  role?: string;
-  created_at?: string;
-}
-
-interface Ayat {
-  arabic: string;
-  translation: string;
-  reference: string;
-}
-
-interface EventItem {
-  id: string;
-  name: string;
-  emoji: string;
-  video: string;
-  color: 'amber' | 'rose' | 'emerald';
-  date?: string;
-  time?: string;
-  venue?: string;
-  mapLink?: string;
-  ref: React.RefObject<HTMLVideoElement | null>;
-  watched: boolean;
-  setWatched: React.Dispatch<React.SetStateAction<boolean>>;
-  invitedKey: string;
-  ayat: Ayat;
-}
-
 interface WeddingLandingPageProps {
   guest: Guest;
-  familyMembers?: FamilyMember[];
+  familyMembers?: FamilyMemberRow[];
 }
 
-interface ColorScheme {
-  border: string;
-  text: string;
-  textLight: string;
-  bg: string;
-  bgHover: string;
-  borderBtn: string;
+interface TimeLeft {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
 }
 
-// ==================== MAIN COMPONENT ====================
+// ==================== ASSET CONSTANTS ====================
+const IMAGES = {
+  DIVIDER: 'https://cdn.invitationsstudio.com/templates/template-1047/divider.webp',
+  EVENT_ILLUSTRATION: 'https://cdn.invitationsstudio.com/templates/template-1047/rest-illustration-it-1.webp',
+  DRESSCODE: 'https://cdn.invitationsstudio.com/templates/template-1047/dresscode.webp',
+  RSVP_GIF: 'https://cdn.invitationsstudio.com/templates/template-1047/inner-video.gif',
+  FOOTER_BG: 'https://cdn.invitationsstudio.com/templates/template-1047/footer-cover.webp',
+  KEY: 'https://cdn.invitationsstudio.com/templates/template-1047/key.webp',
+  CRYSTALS: 'https://cdn.invitationsstudio.com/templates/template-1047/crystals.webp',
+  FALLBACK_COUPLE: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
+  HERO_FALLBACK: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&q=80&w=1920',
+};
+
 export default function WeddingLandingPage({
   guest,
   familyMembers = [],
 }: WeddingLandingPageProps) {
-  const [stage, setStage] = useState<'intro' | 'unlocked'>('intro');
-  const [introError, setIntroError] = useState(false);
-  const [activeTab, setActiveTab] = useState('home');
+  const supabase = createClient();
 
-  const [rsvpStatus, setRsvpStatus] = useState<
-    'pending' | 'attending' | 'not_attending' | 'maybe'
-  >(guest?.rsvp_status || 'pending');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [stage, setStage] = useState<'intro' | 'unlocked'>('intro');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+
+  // RSVP Real-time State
+  const [rsvpChoice, setRsvpChoice] = useState<'attending' | 'declined' | null>(
+    guest?.rsvp_status || null
+  );
+  const [isUpdatingRsvp, setIsUpdatingRsvp] = useState(false);
 
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
-  const mehndiVideoRef = useRef<HTMLVideoElement | null>(null);
-  const baratVideoRef = useRef<HTMLVideoElement | null>(null);
-  const walimaVideoRef = useRef<HTMLVideoElement | null>(null);
+  const heroVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  const [mehndiWatched, setMehndiWatched] = useState(false);
-  const [baratWatched, setBaratWatched] = useState(false);
-  const [walimaWatched, setWalimaWatched] = useState(false);
-
-  const [activeEventId, setActiveEventId] = useState<string | null>(null);
-
-  // ==================== DYNAMIC DATA ====================
+  // Dynamic Guest & Wedding Data Extraction
   const guestName = guest?.name || 'Valued Guest';
   const guestTitle = guest?.title_prefix || '';
-  const personalMessage = guest?.personal_message || '';
-  const allowedGuests = guest?.allowed_guests || 1;
-  const invitedEvents: string[] = guest?.invited_events || [
-    'Mehndi',
-    'Barat',
-    'Walima',
-  ];
-
   const wedding: Wedding = guest?.wedding || {};
   const groomName = wedding.groom_name || 'Groom';
   const brideName = wedding.bride_name || 'Bride';
-  const groomImage = wedding.groom_image || null;
-  const brideImage = wedding.bride_image || null;
 
-  // ==================== ALL EVENTS (memoized) ====================
-  const allEvents: EventItem[] = useMemo(
-    () => [
-      {
-        id: 'mehndi',
-        name: 'Mehndi Celebration',
-        emoji: '🌿',
-        video: '/mm.mp4',
-        color: 'amber',
-        date: wedding.mehndi_date,
-        time: wedding.mehndi_time,
-        venue: wedding.mehndi_venue,
-        mapLink: wedding.mehndi_map_url,
-        ref: mehndiVideoRef,
-        watched: mehndiWatched,
-        setWatched: setMehndiWatched,
-        invitedKey: 'Mehndi',
-        ayat: {
-          arabic:
-            'وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً',
-          translation:
-            'And among His signs is that He created for you mates from among yourselves, that you may dwell in tranquility with them, and He has put love and mercy between your hearts.',
-          reference: 'Surah Ar-Rum 30:21',
-        },
-      },
-      {
-        id: 'barat',
-        name: 'Nikkah & Barat',
-        emoji: '💍',
-        video: '/nn.mp4',
-        color: 'rose',
-        date: wedding.barat_date,
-        time: wedding.barat_time,
-        venue: wedding.barat_venue,
-        mapLink: wedding.barat_map_url,
-        ref: baratVideoRef,
-        watched: baratWatched,
-        setWatched: setBaratWatched,
-        invitedKey: 'Barat',
-        ayat: {
-          arabic:
-            'بَارَكَ اللَّهُ لَكَ وَبَارَكَ عَلَيْكَ وَجَمَعَ بَيْنَكُمَا فِي خَيْرٍ',
-          translation:
-            'May Allah bless you, and shower His blessings upon you, and join you together in goodness.',
-          reference: 'Sunan Abu Dawud 2130',
-        },
-      },
-      {
-        id: 'walima',
-        name: 'Walima Reception',
-        emoji: '✨',
-        video: '/ww.mp4',
-        color: 'emerald',
-        date: wedding.walima_date,
-        time: wedding.walima_time,
-        venue: wedding.walima_venue,
-        mapLink: wedding.walima_map_url,
-        ref: walimaVideoRef,
-        watched: walimaWatched,
-        setWatched: setWalimaWatched,
-        invitedKey: 'Walima',
-        ayat: {
-          arabic:
-            'وَإِذَا حُيِّيتُم بِتَحِيَّةٍ فَحَيُّوا بِأَحْسَنَ مِنْهَا أَوْ رُدُّوهَا',
-          translation:
-            'And when you are greeted with a greeting, greet with a better greeting or return it. Indeed Allah is ever, over all things, an Accountant.',
-          reference: 'Surah An-Nisa 4:86',
-        },
-      },
-    ],
-    [
-      wedding.mehndi_date,
-      wedding.mehndi_time,
-      wedding.mehndi_venue,
-      wedding.mehndi_map_url,
-      wedding.barat_date,
-      wedding.barat_time,
-      wedding.barat_venue,
-      wedding.barat_map_url,
-      wedding.walima_date,
-      wedding.walima_time,
-      wedding.walima_venue,
-      wedding.walima_map_url,
-      mehndiWatched,
-      baratWatched,
-      walimaWatched,
-    ]
-  );
+  const coupleImage =
+    wedding.couple_image ||
+    wedding.groom_image ||
+    wedding.bride_image ||
+    IMAGES.FALLBACK_COUPLE;
 
-  // ==================== FILTER ====================
-  const invitedEventsNormalized = (invitedEvents || []).map((e: string) =>
-    String(e).toLowerCase().trim()
-  );
+  // Quotes & Verses
+  const quoteArabic =
+    wedding.ayat?.arabic ||
+    wedding.quote_arabic ||
+    'وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا وَجَعَلَ بَيْنَكُم مَّوَدَّةً وَرَحْمَةً';
+  const quoteText =
+    wedding.ayat?.text ||
+    wedding.quote ||
+    'And among His signs is that He created for you mates from among yourselves, that you may dwell in tranquility with them, and He has put love and mercy between your hearts.';
+  const quoteReference =
+    wedding.ayat?.reference || wedding.quote_reference || 'SURAH AR-RUM (30:21)';
 
-  const events = useMemo(
-    () =>
-      allEvents.filter((e: EventItem) => {
-        if (invitedEventsNormalized.length === 0) return true;
-        return invitedEventsNormalized.includes(e.invitedKey.toLowerCase());
-      }),
-    [allEvents, invitedEventsNormalized.join(',')]
-  );
+  const paletteColors = wedding.color_palette || ['#E2D5C3', '#C9B397', '#9CA99E', '#536155'];
 
-  // ==================== COLOR MAP ====================
-  const colorMap: Record<string, ColorScheme> = {
-    amber: {
-      border: 'border-amber-400/30',
-      text: 'text-amber-400',
-      textLight: 'text-amber-200',
-      bg: 'bg-amber-500/20',
-      bgHover: 'hover:bg-amber-500/30',
-      borderBtn: 'border-amber-500/40',
-    },
-    rose: {
-      border: 'border-rose-400/30',
-      text: 'text-rose-400',
-      textLight: 'text-rose-200',
-      bg: 'bg-rose-500/20',
-      bgHover: 'hover:bg-rose-500/30',
-      borderBtn: 'border-rose-500/40',
-    },
-    emerald: {
-      border: 'border-emerald-400/30',
-      text: 'text-emerald-400',
-      textLight: 'text-emerald-200',
-      bg: 'bg-emerald-500/20',
-      bgHover: 'hover:bg-emerald-500/30',
-      borderBtn: 'border-emerald-500/40',
-    },
+  // Robust Dynamic Events Extraction Logic
+  const invitedEvents = useMemo(() => {
+    let list: EventDetails[] = [];
+
+    if (wedding?.events && wedding.events.length > 0) {
+      list = [...wedding.events];
+    } else {
+      if (wedding?.mehndi_date || wedding?.mehndi_venue) {
+        list.push({
+          id: 'mehndi',
+          name: 'Mehndi Ceremony',
+          date: wedding.mehndi_date,
+          time: wedding.mehndi_time,
+          venue_name: wedding.mehndi_venue,
+          google_map_url: wedding.mehndi_map_url,
+          invited: true,
+        });
+      }
+      if (wedding?.barat_date || wedding?.barat_venue) {
+        list.push({
+          id: 'barat',
+          name: 'Barat Ceremony',
+          date: wedding.barat_date,
+          time: wedding.barat_time,
+          venue_name: wedding.barat_venue,
+          google_map_url: wedding.barat_map_url,
+          invited: true,
+        });
+      }
+      if (wedding?.walima_date || wedding?.walima_venue) {
+        list.push({
+          id: 'walima',
+          name: 'Walima Reception',
+          date: wedding.walima_date,
+          time: wedding.walima_time,
+          venue_name: wedding.walima_venue,
+          google_map_url: wedding.walima_map_url,
+          invited: true,
+        });
+      }
+    }
+
+    // Filter based on guest invited_events if defined
+    let filtered = list;
+    if (guest?.invited_events && guest.invited_events.length > 0) {
+      const allowed = guest.invited_events.map((i) => String(i).toLowerCase().trim());
+      filtered = list.filter((e) => {
+        const eventId = String(e.id || '').toLowerCase().trim();
+        const eventName = String(e.name || '').toLowerCase().trim();
+        return (
+          allowed.includes(eventId) ||
+          allowed.some((a) => eventName.includes(a) || a.includes(eventName))
+        );
+      });
+    }
+
+    // Fallback: If filter results in 0 events, display all available events
+    if (filtered.length === 0) {
+      filtered = list;
+    }
+
+    // Sort chronologically by date
+    return filtered.sort((a, b) => {
+      const timeA = new Date(`${a.date || '9999-12-31'}T${a.time || '00:00'}`).getTime();
+      const timeB = new Date(`${b.date || '9999-12-31'}T${b.time || '00:00'}`).getTime();
+      return timeA - timeB;
+    });
+  }, [wedding, guest?.invited_events]);
+
+  // Dynamic Hero Date (Earliest Invited Event)
+  const firstEvent = invitedEvents[0];
+  const targetDateStr = firstEvent?.date;
+  const targetTimeStr = firstEvent?.time;
+
+  const formatDisplayDate = (dateStr?: string): string => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = String(d.getFullYear());
+      return `${day} . ${month} . ${year}`;
+    } catch {
+      return dateStr;
+    }
   };
 
-  // ==================== SCROLL LOCK ====================
+  const formattedHeroDate = formatDisplayDate(targetDateStr);
+
+  // Countdown Calculation
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+  });
+
+  useEffect(() => {
+    if (!targetDateStr) return;
+
+    const fullTargetStr = targetTimeStr ? `${targetDateStr}T${targetTimeStr}` : targetDateStr;
+    const targetTime = new Date(fullTargetStr).getTime();
+
+    const calculateTimeLeft = () => {
+      const now = new Date().getTime();
+      const difference = targetTime - now;
+
+      if (difference > 0) {
+        setTimeLeft({
+          days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+          minutes: Math.floor((difference / 1000 / 60) % 60),
+          seconds: Math.floor((difference / 1000) % 60),
+        });
+      } else {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+      }
+    };
+
+    calculateTimeLeft();
+    const timer = setInterval(calculateTimeLeft, 1000);
+    return () => clearInterval(timer);
+  }, [targetDateStr, targetTimeStr]);
+
+  // Handle Hero Video Autoplay Playback Trigger
+  const handleUnlockAndPlay = () => {
+    setStage('unlocked');
+    if (heroVideoRef.current) {
+      heroVideoRef.current.play().catch((err) => {
+        console.warn('Hero video autoplay blocked on mobile:', err);
+      });
+    }
+  };
+
+  // Real-time RSVP updates
+  const handleRsvpChange = async (status: 'attending' | 'declined') => {
+    setRsvpChoice(status);
+    setIsUpdatingRsvp(true);
+
+    try {
+      const { error } = await supabase
+        .from('guests')
+        .update({
+          rsvp_status: status,
+          rsvp_updated_at: new Date().toISOString(),
+        })
+        .eq('id', guest.id);
+
+      if (error) {
+        console.error('RSVP update failed:', error.message);
+      }
+    } catch (err) {
+      console.error('Unexpected RSVP update error:', err);
+    } finally {
+      setIsUpdatingRsvp(false);
+    }
+  };
+
+  // Scroll Lock for Intro
   useEffect(() => {
     const shouldLock = stage === 'intro';
     document.body.style.overflow = shouldLock ? 'hidden' : 'auto';
@@ -271,884 +317,597 @@ export default function WeddingLandingPage({
     };
   }, [stage]);
 
-  // ==================== INTRO VIDEO — SMOOTH AUTO PLAY ====================
-  // This runs the moment the component mounts. The intro video is the ONLY
-  // video loaded at this point (hero + events are not rendered yet because
-  // stage === 'intro'). Nothing else competes for GPU/memory/bandwidth.
-  useEffect(() => {
-    if (stage !== 'intro') return;
-    const video = introVideoRef.current;
-    if (!video) return;
-
-    // Force the browser to fully buffer before we ever show a frame
-    video.preload = 'auto';
-    video.muted = true; // muted autoplay is always allowed, no click needed
-    video.playsInline = true;
-
-    // Attempt play immediately
-    const attemptPlay = () => {
-      const p = video.play();
-      if (p && typeof p.then === 'function') {
-        p.catch(() => {
-          // If it somehow fails, retry once after a short delay
-          setTimeout(() => {
-            video.play().catch(() => setIntroError(true));
-          }, 200);
-        });
+  const handleIntroPlay = (): void => {
+    if (introVideoRef.current && !videoError) {
+      if (isPlaying) {
+        introVideoRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        introVideoRef.current.play().catch(() => setVideoError(true));
+        setIsPlaying(true);
       }
-    };
-
-    // Only start playing once we have real frames buffered — this is what
-    // prevents the "clash/broken" look. readyState >= 3 means we have
-    // enough data to play through without stalling.
-    const startWhenBuffered = () => {
-      if (video.readyState >= 3) {
-        attemptPlay();
-      }
-    };
-
-    if (video.readyState >= 3) {
-      attemptPlay();
-    } else {
-      video.addEventListener('canplaythrough', attemptPlay, { once: true });
-      // Also listen to loadeddata as a lighter fallback
-      video.addEventListener('loadeddata', startWhenBuffered, { once: true });
-    }
-
-    return () => {
-      video.removeEventListener('canplaythrough', attemptPlay);
-      video.removeEventListener('loadeddata', startWhenBuffered);
-    };
-  }, [stage]);
-
-  // ==================== INTERSECTION OBSERVER ====================
-  useEffect(() => {
-    if (stage !== 'unlocked') return;
-    if (events.length === 0) return;
-
-    const observers: IntersectionObserver[] = [];
-
-    events.forEach((event: EventItem) => {
-      const section = document.getElementById(`event-${event.id}`);
-      if (!section) return;
-
-      const observer = new IntersectionObserver(
-        (entries: IntersectionObserverEntry[]) => {
-          entries.forEach((entry: IntersectionObserverEntry) => {
-            const video = event.ref.current;
-            if (!video) return;
-
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-              if (!event.watched) {
-                setActiveEventId(event.id);
-                try {
-                  if (video.currentTime === 0 || video.paused) {
-                    video.currentTime = 0;
-                  }
-                } catch {}
-                video.muted = false;
-                video.playbackRate = 1.25;
-                const p = video.play();
-                if (p && typeof p.catch === 'function') {
-                  p.catch(() => {
-                    video.muted = true;
-                    video.play().catch(() => {});
-                  });
-                }
-              }
-            } else if (!entry.isIntersecting) {
-              if (!video.paused) {
-                try {
-                  video.pause();
-                } catch {}
-              }
-              if (activeEventId === event.id) {
-                setActiveEventId(null);
-              }
-            }
-          });
-        },
-        { threshold: [0.3, 0.5, 0.7], rootMargin: '0px 0px -10% 0px' }
-      );
-
-      observer.observe(section);
-      observers.push(observer);
-    });
-
-    return () => {
-      observers.forEach((obs: IntersectionObserver) => obs.disconnect());
-    };
-  }, [stage, mehndiWatched, baratWatched, walimaWatched, events.length, activeEventId]);
-
-  // ==================== HANDLERS ====================
-  const handleVideoEnded = useCallback((event: EventItem): void => {
-    event.setWatched(true);
-    setActiveEventId(null);
-  }, []);
-
-  const handleRsvpSubmit = async (
-    status: 'attending' | 'not_attending' | 'maybe'
-  ): Promise<void> => {
-    setIsSubmitting(true);
-    const prev = rsvpStatus;
-    setRsvpStatus(status);
-    try {
-      const response = await fetch('/api/rsvp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          guestId: guest.id,
-          rsvpStatus: status,
-        }),
-      });
-      if (!response.ok) {
-        setRsvpStatus(prev);
-      }
-    } catch (err: unknown) {
-      console.error('Error updating RSVP:', err);
-      setRsvpStatus(prev);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  const generateCalendarLink = (
-    eventTitle: string,
-    date: string | undefined,
-    time: string | undefined,
-    venue: string | undefined
-  ): string => {
-    if (!date) return '#';
-    const dateObj = new Date(`${date}T${time || '12:00'}`);
-    const dateStr =
-      dateObj.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const endDate = new Date(dateObj.getTime() + 4 * 60 * 60 * 1000);
-    const endDateStr =
-      endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
-      eventTitle
-    )}&dates=${dateStr}/${endDateStr}&details=${encodeURIComponent(
-      `Wedding Celebration at ${venue || ''}`
-    )}&location=${encodeURIComponent(venue || '')}`;
-  };
-
-  const formatDate = (dateStr: string | undefined): string => {
-    if (!dateStr) return 'Date TBA';
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateStr;
-    }
-  };
-
-  const scrollToSection = useCallback((id: string): void => {
-    setActiveTab(id);
+  const scrollToSection = (id: string): void => {
     const element = document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      element.scrollIntoView({ behavior: 'smooth' });
     }
-  }, []);
+  };
 
-  const hasFamilyMembers = familyMembers && familyMembers.length > 0;
+  const handleViewMap = (event: EventDetails) => {
+    if (event.google_map_url) {
+      window.open(event.google_map_url, '_blank');
+    } else {
+      const query = encodeURIComponent(`${event.venue_name || ''} ${event.address || ''}`);
+      window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+    }
+  };
 
-  // ==================== RSVP MESSAGES ====================
-  const rsvpMessage = useMemo(() => {
-    if (rsvpStatus === 'attending') {
-      return {
-        emoji: '🎉',
-        title: 'JazakAllah Khair!',
-        subtitle: "We're overjoyed!",
-        message: `Thank you, ${guestTitle} ${guestName}! Your presence will make our celebration truly complete. We can't wait to share this blessed moment with you and your family. May Allah bless you abundantly. 🤲`,
-        gradient: 'from-emerald-500/20 to-teal-500/10',
-        border: 'border-emerald-400/40',
-        textColor: 'text-emerald-300',
-      };
-    }
-    if (rsvpStatus === 'not_attending') {
-      return {
-        emoji: '💔',
-        title: 'We Will Miss You',
-        subtitle: "You'll be in our hearts",
-        message: `Dearest ${guestTitle} ${guestName}, we understand. While we'll deeply miss your presence at our celebration, we truly appreciate you letting us know. Please do keep us in your prayers — your duas mean the world to us. May Allah bless you with joy and health. 🤲`,
-        gradient: 'from-rose-500/20 to-pink-500/10',
-        border: 'border-rose-400/40',
-        textColor: 'text-rose-300',
-      };
-    }
-    if (rsvpStatus === 'maybe') {
-      return {
-        emoji: '🤔',
-        title: 'We Hope You Can Make It',
-        subtitle: 'Take your time',
-        message: `Thank you ${guestTitle} ${guestName}! We completely understand — please take your time to decide. We would be honored to have you join us, InshaAllah. Do let us know when you can. 💫`,
-        gradient: 'from-amber-500/20 to-yellow-500/10',
-        border: 'border-amber-400/40',
-        textColor: 'text-amber-300',
-      };
-    }
-    return {
-      emoji: '💌',
-      title: 'Awaiting Your Reply',
-      subtitle: 'Your response matters to us',
-      message: `Assalam-o-Alaikum ${guestTitle} ${guestName}! We would be truly honored to have you celebrate with us. Please take a moment to respond — your presence means the world to us. 💫`,
-      gradient: 'from-rose-500/20 to-pink-500/10',
-      border: 'border-rose-300/30',
-      textColor: 'text-rose-200',
-    };
-  }, [rsvpStatus, guestTitle, guestName]);
+  const handleAddToCalendar = (event: EventDetails) => {
+    const title = `${event.name} - ${groomName} & ${brideName}`;
+    const location = `${event.venue_name || ''}, ${event.address || ''}`;
+    const dateStr = event.date || '';
+    const timeStr = event.time || '00:00';
 
-  // ==================== RENDER ====================
+    if (!dateStr) return;
+
+    const cleanDate = dateStr.replace(/-/g, '');
+    const cleanTime = timeStr.replace(/:/g, '') + '00';
+    const startDateTime = `${cleanDate}T${cleanTime}`;
+
+    const icsData = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Wedding Invitation//EN
+BEGIN:VEVENT
+SUMMARY:${title}
+LOCATION:${location}
+DESCRIPTION:Wedding Celebration of ${groomName} & ${brideName}
+DTSTART:${startDateTime}
+DTEND:${startDateTime}
+END:VEVENT
+END:VCALENDAR`;
+
+    const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', `${event.name.replace(/\s+/g, '_')}_Event.ics`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <main
-      className={`relative w-full min-h-screen bg-black text-white overflow-x-hidden selection:bg-rose-100 selection:text-rose-900 font-sans ${
-        stage !== 'intro' ? 'pb-24' : ''
-      }`}
-    >
-      {/* ==================== INTRO GATE ==================== */}
-      {/* While stage === 'intro', we render ONLY the intro video. The hero
-          and event videos are NOT mounted yet, so nothing competes with the
-          intro for GPU/memory/bandwidth. This is what makes it smooth. */}
+    <main className="relative w-full min-h-screen bg-[#F3ECE4] text-[#4A3E3D] overflow-x-hidden font-serif antialiased">
+      
+      {/* ==================== 1. INTRO GATE SECTION ==================== */}
       {stage === 'intro' && (
-        <div className="fixed inset-0 w-full h-full bg-black z-[100] flex items-center justify-center">
-          {introError ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 p-6 text-center">
-              <p className="text-sm text-zinc-400 mb-4 font-light">
-                Cinematic intro unavailable
+        <div
+          onClick={handleIntroPlay}
+          className="fixed inset-0 w-full h-[100dvh] bg-black z-[60] flex items-center justify-center cursor-pointer select-none"
+        >
+          {videoError ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#12100E] p-6 text-center font-sans">
+              <img src={IMAGES.KEY} alt="Key Icon" className="w-12 h-12 mb-4 opacity-80" />
+              <p className="text-xs text-amber-200/70 mb-6 tracking-widest uppercase font-light">
+                Exclusive Wedding Invitation
               </p>
               <button
-                onClick={() => setStage('unlocked')}
-                className="px-8 py-3.5 rounded-full bg-gradient-to-r from-rose-500 to-pink-600 text-white text-xs font-semibold uppercase tracking-[0.2em] shadow-2xl"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUnlockAndPlay();
+                }}
+                className="px-8 py-3.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#AA7C11] text-white text-[11px] font-semibold uppercase tracking-[0.25em] shadow-2xl active:scale-95 transition-transform"
               >
-                Enter Invitation
+                Open Invitation
               </button>
             </div>
           ) : (
             <video
               ref={introVideoRef}
-              src="/v.mp4"
-              className="w-full h-full object-cover"
+              src="https://cdn.invitationsstudio.com/templates/template-1047/lock-cover.mp4"
+              className="w-full h-full object-cover object-center"
               playsInline
-              preload="auto"
               muted
-              autoPlay
-              controls={false}
-              disablePictureInPicture
-              onError={() => setIntroError(true)}
-              onEnded={() => setStage('unlocked')}
-              onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
-                e.preventDefault()
-              }
+              preload="auto"
+              onError={() => setVideoError(true)}
+              onEnded={handleUnlockAndPlay}
             />
           )}
 
-          <div className="absolute inset-x-6 bottom-12 z-50 pointer-events-none flex justify-center">
-            <div className="relative inline-block max-w-xs w-full bg-black/60 backdrop-blur-xl border border-rose-300/30 rounded-2xl px-5 py-3 text-center shadow-2xl ring-1 ring-white/15">
-              <div className="flex items-center justify-center space-x-1.5 mb-0.5">
-                <span className="text-[9px]">✨</span>
-                <span className="text-[9px] uppercase tracking-[0.2em] text-rose-300 font-bold">
+          <div className="absolute inset-x-4 bottom-10 z-50 pointer-events-none flex justify-center font-sans">
+            <div className="relative max-w-sm w-full bg-black/60 backdrop-blur-xl border border-[#D4AF37]/40 rounded-3xl px-6 py-4 text-center shadow-[0_20px_50px_rgba(0,0,0,0.8)] ring-1 ring-white/10">
+              <div className="flex items-center justify-center space-x-2 mb-1">
+                <span className="text-xs">✨</span>
+                <span className="text-[10px] uppercase tracking-[0.3em] text-[#D4AF37] font-bold">
                   VIP Invitation For
                 </span>
-                <span className="text-[9px]">✨</span>
+                <span className="text-xs">✨</span>
               </div>
-              <h2 className="text-lg font-serif text-white font-bold tracking-wide capitalize truncate">
+              <h2 className="text-lg font-serif text-white font-normal tracking-wide capitalize truncate">
                 {guestTitle} {guestName}
               </h2>
+              {!isPlaying && (
+                <p className="text-[10px] text-amber-200/90 font-light mt-1.5 tracking-widest uppercase animate-pulse">
+                  Tap screen to unlock
+                </p>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ==================== EVERYTHING ELSE — only mounted after intro ==================== */}
-      {stage === 'unlocked' && (
-        <>
-          {/* ==================== HERO SECTION ==================== */}
-          <section
-            id="home"
-            className="relative w-full h-screen flex flex-col justify-between overflow-hidden"
-          >
-            <div className="absolute inset-0 w-full h-full z-0">
-              <video
-                src="https://pub-4dc8201144ca418fb604349c73e8c724.r2.dev/Newbeautifulvideo.mp4"
-                className="w-full h-full object-cover filter brightness-50 contrast-110"
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="metadata"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/40 to-black/90"></div>
-            </div>
+      {/* ==================== 2. HERO SECTION ==================== */}
+      <section id="home" className="relative w-full h-[100dvh] flex flex-col justify-end overflow-hidden">
+        <div className="absolute inset-0 w-full h-full z-0 bg-[#12100E]">
+          <video
+            ref={heroVideoRef}
+            src="https://cdn.invitationsstudio.com/templates/template-1047/hero.mp4"
+            className="w-full h-full object-cover object-center"
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            poster={IMAGES.HERO_FALLBACK}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#12100E] via-[#12100E]/30 to-black/30"></div>
+        </div>
 
-            <div className="relative z-10 pt-10 px-6 text-center flex-1 flex flex-col justify-between items-center max-w-md mx-auto w-full pb-12">
-              <div className="inline-block bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-5 py-2 shadow-xl">
-                <p className="text-[9px] uppercase tracking-[0.25em] text-rose-300 font-semibold mb-0.5">
-                  ✨ Special VIP Invitation For
-                </p>
-                <p className="text-sm font-serif text-white font-bold tracking-wide capitalize drop-shadow">
-                  {guestTitle} {guestName}
-                </p>
+        <div className="relative z-10 w-full max-w-2xl mx-auto px-6 pb-12 pt-10 flex flex-col items-center justify-end text-center space-y-4 font-sans">
+          {guestName && (
+            <div className="inline-block bg-black/50 backdrop-blur-md border border-[#D4AF37]/40 rounded-full px-5 py-2 shadow-xl mb-1">
+              <p className="text-[10px] uppercase tracking-[0.3em] text-[#E8D3A7] font-medium">
+                Honorary Guest: {guestTitle} {guestName}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-col items-center justify-center space-y-3 w-full">
+            <p className="text-[11px] uppercase tracking-[0.45em] text-[#D4AF37] font-serif font-semibold">
+              THE WEDDING OF
+            </p>
+
+            <h1 className="text-4xl sm:text-6xl font-serif text-[#F4E8D1] tracking-wider italic font-normal drop-shadow-lg capitalize leading-tight">
+              {groomName} <span className="font-serif not-italic text-[#D4AF37] mx-1.5">&</span> {brideName}
+            </h1>
+
+            <img
+              src={IMAGES.DIVIDER}
+              alt="Divider Ornament"
+              className="w-48 h-auto my-2 opacity-80 filter brightness-125"
+            />
+
+            {formattedHeroDate && (
+              <p className="text-xs sm:text-base font-serif text-[#E8D3A7] tracking-[0.4em] font-light uppercase">
+                {formattedHeroDate}
+              </p>
+            )}
+          </div>
+
+          <div
+            className="pt-6 animate-bounce flex flex-col items-center cursor-pointer"
+            onClick={() => scrollToSection('invitation-card')}
+          >
+            <p className="text-[9px] uppercase tracking-[0.3em] text-[#D4AF37] font-semibold mb-1">
+              Scroll Down
+            </p>
+            <span className="text-sm text-[#D4AF37]">↓</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== 3. INVITATION CARD SECTION ==================== */}
+      <section
+        id="invitation-card"
+        className="relative w-full bg-[#F3ECE4] text-[#4A3E3D] py-20 px-6 border-b border-[#E3D7C9]"
+      >
+        <div className="relative z-10 w-full max-w-md mx-auto flex flex-col items-center text-center space-y-6">
+          <div className="w-full flex justify-center pt-2">
+            <img
+              src={IMAGES.KEY}
+              alt="Key Ornament"
+              className="w-16 sm:w-20 h-auto opacity-80"
+            />
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <p className="text-[11px] sm:text-xs uppercase tracking-[0.35em] text-[#8C7A6B]">
+              THE
+            </p>
+            <h2 className="text-sm sm:text-base tracking-[0.25em] text-[#5C4D43] font-semibold uppercase">
+              FAMILIES
+            </h2>
+          </div>
+
+          <div className="space-y-1.5 pt-1">
+            <p className="text-xs sm:text-sm italic text-[#7A685A] tracking-wider">
+              joyfully invite you to celebrate
+            </p>
+            <p className="text-xs sm:text-sm italic text-[#7A685A] tracking-wider">
+              the wedding of
+            </p>
+          </div>
+
+          <div className="py-2">
+            <h1 className="text-4xl sm:text-5xl font-serif text-[#C5A880] tracking-wide italic font-normal capitalize">
+              {groomName} <span className="not-italic text-[#B39368] font-serif mx-1">&</span> {brideName}
+            </h1>
+          </div>
+
+          {guest?.personal_message && (
+            <div className="w-full p-4 rounded-2xl bg-white/50 border border-[#D8C8B8] my-2">
+              <p className="text-xs italic text-[#6B5B50]">
+                "{guest.personal_message}"
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-4 max-w-xs mx-auto">
+            <p className="text-xs sm:text-sm text-[#6B5B50] leading-relaxed italic">
+              as they begin their new chapter together.
+            </p>
+            <p className="text-xs sm:text-sm text-[#6B5B50] leading-relaxed pt-1">
+              Your presence would make this special day even more meaningful.
+            </p>
+          </div>
+
+          <div className="pt-6 pb-4 flex justify-center w-full">
+            <div className="relative w-56 h-72 sm:w-64 sm:h-80 rounded-t-full border-[3px] border-[#D8C8B8]/70 p-1.5 bg-[#F3ECE4] shadow-xl">
+              <div className="w-full h-full rounded-t-full overflow-hidden">
+                <img
+                  src={coupleImage}
+                  alt={`${groomName} and ${brideName}`}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== 4. HOLY AYAT & QUOTE SECTION ==================== */}
+      <section
+        id="ayat-section"
+        className="relative w-full bg-[#F3ECE4] text-[#4A3E3D] py-20 px-6 border-b border-[#E3D7C9]"
+      >
+        <div className="w-full max-w-2xl mx-auto flex flex-col items-center text-center space-y-6">
+          <p
+            className="text-2xl sm:text-3xl text-[#8C7456] leading-loose font-arabic"
+            dir="rtl"
+            style={{ fontFamily: '"Amiri", "Traditional Arabic", serif' }}
+          >
+            {quoteArabic}
+          </p>
+
+          <img src={IMAGES.DIVIDER} alt="Divider" className="w-36 h-auto opacity-70" />
+
+          <p className="text-base sm:text-lg font-serif text-[#B8966C] italic leading-relaxed font-light max-w-lg">
+            "{quoteText}"
+          </p>
+
+          <p className="text-[11px] uppercase tracking-[0.4em] text-[#8C7A6B] font-semibold pt-1">
+            {quoteReference}
+          </p>
+        </div>
+      </section>
+
+      {/* ==================== 5. COUNTDOWN SECTION ==================== */}
+      {targetDateStr && (
+        <section
+          id="countdown-section"
+          className="relative w-full bg-[#F3ECE4] py-16 px-6 border-b border-[#E3D7C9]"
+        >
+          <div className="w-full max-w-xl mx-auto flex flex-col items-center text-center space-y-8">
+            <h3 className="text-xs sm:text-sm font-serif uppercase tracking-[0.45em] text-[#5C4D43] font-medium">
+              COUNTDOWN TO THE CELEBRATION
+            </h3>
+
+            <div className="grid grid-cols-4 gap-3 sm:gap-6 w-full max-w-md bg-white/40 p-6 rounded-3xl border border-[#EADFCF] shadow-sm backdrop-blur-sm">
+              <div className="flex flex-col items-center relative">
+                <span className="text-3xl sm:text-5xl font-serif text-[#B8966C] font-light">
+                  {String(timeLeft.days).padStart(2, '0')}
+                </span>
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-[#8C7A6B] mt-2 font-semibold">
+                  DAYS
+                </span>
+                <div className="absolute right-0 top-2 bottom-2 w-[1px] bg-[#D8C8B8]/50"></div>
               </div>
 
-              <div className="space-y-4 my-auto">
-                <p className="text-xl md:text-2xl text-rose-200 font-serif tracking-widest font-medium drop-shadow-md">
-                  بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
-                </p>
+              <div className="flex flex-col items-center relative">
+                <span className="text-3xl sm:text-5xl font-serif text-[#B8966C] font-light">
+                  {String(timeLeft.hours).padStart(2, '0')}
+                </span>
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-[#8C7A6B] mt-2 font-semibold">
+                  HOURS
+                </span>
+                <div className="absolute right-0 top-2 bottom-2 w-[1px] bg-[#D8C8B8]/50"></div>
+              </div>
 
-                <blockquote className="text-[11px] italic text-zinc-300 max-w-xs mx-auto leading-relaxed font-light drop-shadow">
-                  &quot;And He placed between you affection and mercy. Indeed in that
-                  are signs for a people who give thought.&quot;{' '}
-                  <span className="not-italic text-[10px] block mt-1 font-medium text-rose-300">
-                    (Surah Ar-Rum: 21)
-                  </span>
-                </blockquote>
+              <div className="flex flex-col items-center relative">
+                <span className="text-3xl sm:text-5xl font-serif text-[#B8966C] font-light">
+                  {String(timeLeft.minutes).padStart(2, '0')}
+                </span>
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-[#8C7A6B] mt-2 font-semibold">
+                  MINS
+                </span>
+                <div className="absolute right-0 top-2 bottom-2 w-[1px] bg-[#D8C8B8]/50"></div>
+              </div>
 
-                {(groomImage || brideImage) && (
-                  <div className="flex items-center justify-center gap-4 pt-2">
-                    {groomImage && (
-                      <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
-                        <img
-                          src={groomImage}
-                          alt={groomName}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      </div>
-                    )}
-                    <span className="text-2xl text-rose-400 font-serif">&</span>
-                    {brideImage && (
-                      <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg">
-                        <img
-                          src={brideImage}
-                          alt={brideName}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      </div>
-                    )}
+              <div className="flex flex-col items-center">
+                <span className="text-3xl sm:text-5xl font-serif text-[#B8966C] font-light">
+                  {String(timeLeft.seconds).padStart(2, '0')}
+                </span>
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.25em] text-[#8C7A6B] mt-2 font-semibold">
+                  SECS
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ==================== 6. TIMELINE & INVITED EVENTS SECTION ==================== */}
+      {invitedEvents.length > 0 && (
+        <section id="timeline-section" className="relative w-full bg-[#F3ECE4] py-20 px-6 border-b border-[#E3D7C9]">
+          <div className="w-full max-w-xl mx-auto flex flex-col items-center text-center space-y-12">
+            <div className="space-y-3 w-full flex flex-col items-center">
+              <h2 className="text-base sm:text-lg font-serif uppercase tracking-[0.45em] text-[#A38D6D] font-normal">
+                EVENTS & SCHEDULE
+              </h2>
+              <img src={IMAGES.DIVIDER} alt="Divider" className="w-36 h-auto opacity-70" />
+            </div>
+
+            <div className="w-full space-y-16">
+              {invitedEvents.map((event, idx) => (
+                <div
+                  key={event.id || idx}
+                  className="flex flex-col items-center text-center space-y-4 max-w-md mx-auto p-6 rounded-3xl bg-white/40 border border-[#EADFCF] shadow-sm backdrop-blur-sm"
+                >
+                  <div className="w-full max-w-sm mb-2 overflow-hidden rounded-2xl">
+                    <img
+                      src={IMAGES.EVENT_ILLUSTRATION}
+                      alt={event.name}
+                      className="w-full h-auto object-cover"
+                    />
                   </div>
-                )}
 
-                {personalMessage && (
-                  <div className="max-w-xs mx-auto bg-white/5 backdrop-blur-md border border-rose-300/20 rounded-2xl px-4 py-3">
-                    <p className="text-[10px] uppercase tracking-widest text-rose-300 font-bold mb-1">
-                      💌 Personal Message
-                    </p>
-                    <p className="text-[11px] italic text-zinc-200 leading-relaxed">
-                      &quot;{personalMessage}&quot;
-                    </p>
-                  </div>
-                )}
+                  <h3 className="text-3xl sm:text-4xl font-serif text-[#7A685A] italic font-normal tracking-wide capitalize">
+                    {event.name}
+                  </h3>
 
-                <div className="space-y-1.5 pt-2">
-                  <span className="text-[9px] uppercase tracking-[0.3em] text-rose-300 font-bold block">
-                    Wedding Celebration
-                  </span>
-                  <h1 className="text-3xl md:text-4xl font-serif text-white tracking-tight drop-shadow-lg capitalize">
-                    {groomName}{' '}
-                    <span className="text-rose-400 font-light">&</span> {brideName}
-                  </h1>
-                  {allowedGuests > 1 && (
-                    <p className="text-[10px] text-rose-200/70 uppercase tracking-widest pt-1">
-                      Reserved for {allowedGuests} guests
+                  <img src={IMAGES.DIVIDER} alt="Divider" className="w-24 h-auto opacity-60 my-1" />
+
+                  {event.date && (
+                    <p className="text-xs font-serif uppercase tracking-[0.25em] text-[#9A8878] font-light">
+                      {formatDisplayDate(event.date)}
                     </p>
                   )}
+
+                  {event.time && (
+                    <p className="text-2xl sm:text-3xl font-serif text-[#A38D6D] tracking-[0.2em] font-light py-1">
+                      {event.time}
+                    </p>
+                  )}
+
+                  <div className="space-y-1.5 max-w-xs pt-1">
+                    {event.venue_name && (
+                      <p className="text-lg sm:text-xl font-serif text-[#6B5B50] font-normal">
+                        {event.venue_name}
+                      </p>
+                    )}
+                    {event.address && (
+                      <p className="text-xs sm:text-sm font-serif text-[#8C7A6B] leading-relaxed font-light">
+                        Address: {event.address}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-4 flex flex-row items-center justify-center gap-3 w-full max-w-xs">
+                    <button
+                      onClick={() => handleViewMap(event)}
+                      className="flex-1 py-2.5 px-3 rounded-full border border-[#D8C8B8] bg-[#EFE7DD]/50 text-[#7A685A] hover:bg-[#EAE0D5] hover:border-[#C5A880] text-[9px] sm:text-[10px] uppercase tracking-[0.2em] transition-all duration-300 shadow-sm active:scale-95 whitespace-nowrap"
+                    >
+                      VIEW ON MAP
+                    </button>
+
+                    <button
+                      onClick={() => handleAddToCalendar(event)}
+                      className="flex-1 py-2.5 px-3 rounded-full border border-[#C5A880] bg-[#EAE0D5]/80 text-[#5C4D43] hover:bg-[#C5A880] hover:text-white text-[9px] sm:text-[10px] uppercase tracking-[0.2em] transition-all duration-300 shadow-sm active:scale-95 whitespace-nowrap"
+                    >
+                      ADD TO CALENDAR
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              <div
-                className="animate-bounce flex flex-col items-center cursor-pointer"
-                onClick={() => scrollToSection('events')}
-              >
-                <p className="text-[9px] uppercase tracking-[0.2em] text-rose-200 font-medium mb-1">
-                  Scroll Down to Events ↓
-                </p>
-                <span className="text-base text-rose-300">↓</span>
-              </div>
+              ))}
             </div>
-          </section>
+          </div>
+        </section>
+      )}
 
-          {/* ==================== EVENT SECTIONS ==================== */}
-          <div id="events" className="relative z-10 w-full flex flex-col">
-            {events.length === 0 ? (
-              <div className="w-full max-w-md mx-auto px-4 py-20 text-center">
-                <p className="text-zinc-400 text-sm">No events configured yet.</p>
-              </div>
-            ) : (
-              events.map((event: EventItem, idx: number) => {
-                const colors = colorMap[event.color];
-                const isPlayingThis = activeEventId === event.id;
-                const isWatched = event.watched;
+      {/* ==================== 7. DRESS CODE SECTION ==================== */}
+      <section className="relative w-full bg-[#F3ECE4] py-20 px-6 border-b border-[#E3D7C9] overflow-hidden">
+        <div className="w-full max-w-xl mx-auto flex flex-col items-center text-center space-y-6">
+          <h2 className="text-base sm:text-lg font-serif uppercase tracking-[0.45em] text-[#5C4D43] font-medium">
+            DRESS CODE
+          </h2>
 
-                return (
-                  <section
-                    key={event.id}
-                    id={`event-${event.id}`}
-                    className="relative w-full h-screen overflow-hidden bg-black border-b border-white/10"
-                  >
-                    <video
-                      ref={event.ref}
-                      src={event.video}
-                      className="absolute inset-0 w-full h-full object-cover z-0"
-                      playsInline
-                      preload={idx === 0 ? 'auto' : 'metadata'}
-                      controls={false}
-                      disablePictureInPicture
-                      onEnded={() => handleVideoEnded(event)}
-                      onContextMenu={(e: React.MouseEvent<HTMLVideoElement>) =>
-                        e.preventDefault()
-                      }
-                    />
+          <img src={IMAGES.DIVIDER} alt="Divider" className="w-36 h-auto opacity-70" />
 
-                    <div className="absolute inset-0 z-[1] pointer-events-none">
-                      <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
-                      <div className="absolute bottom-0 inset-x-0 h-56 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-                      <div className="absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black/50 to-transparent" />
-                      <div className="absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black/50 to-transparent" />
-                      <div
-                        className={`absolute bottom-0 inset-x-0 h-48 bg-gradient-to-t ${
-                          event.color === 'amber'
-                            ? 'from-amber-500/20'
-                            : event.color === 'rose'
-                            ? 'from-rose-500/20'
-                            : 'from-emerald-500/20'
-                        } via-transparent to-transparent opacity-70`}
+          <p className="text-sm sm:text-base font-serif text-[#7A685A] italic leading-relaxed max-w-md">
+            {wedding.dress_code || 'We kindly ask you to wear elegant attire in the colours of the palette below.'}
+          </p>
+
+          <div className="flex items-center justify-center gap-3 pt-2 pb-4">
+            {paletteColors.map((color, idx) => (
+              <span
+                key={idx}
+                className="w-8 h-8 rounded-full border-2 border-white shadow-md inline-block transition-transform duration-300 hover:scale-110"
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
+
+          <div className="w-full max-w-lg mt-4 overflow-hidden rounded-2xl shadow-sm border border-[#EADFCF]/60">
+            <img
+              src={IMAGES.DRESSCODE}
+              alt="Dress Code Illustration"
+              className="w-full h-auto object-cover"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ==================== 8. DYNAMIC RSVP SECTION ==================== */}
+      <section id="rsvp-section" className="relative w-full bg-[#F3ECE4] py-20 px-6 border-b border-[#E3D7C9]">
+        <div className="w-full max-w-xl mx-auto flex flex-col items-center text-center space-y-8">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl shadow-sm border border-[#EADFCF]/70 mb-2">
+            <img
+              src={IMAGES.RSVP_GIF}
+              alt="RSVP Decoration"
+              className="w-full h-auto object-cover"
+            />
+          </div>
+
+          <div className="space-y-3 w-full flex flex-col items-center">
+            <h2 className="text-lg sm:text-xl font-serif uppercase tracking-[0.45em] text-[#5C4D43] font-medium">
+              R S V P
+            </h2>
+            <img src={IMAGES.DIVIDER} alt="Divider" className="w-40 h-auto opacity-70" />
+          </div>
+
+          <p className="text-sm font-serif text-[#7A685A] italic">
+            Please respond to confirm your presence for our grand celebration
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md pt-2">
+            <button
+              disabled={isUpdatingRsvp}
+              onClick={() => handleRsvpChange('attending')}
+              className={`w-full py-4 px-6 rounded-full text-[11px] font-sans font-semibold uppercase tracking-[0.25em] transition-all duration-300 shadow-lg active:scale-95 ${
+                rsvpChoice === 'attending'
+                  ? 'bg-[#B8966C] text-white ring-4 ring-[#B8966C]/20 scale-105'
+                  : 'bg-white border border-[#B8966C] text-[#5C4D43] hover:bg-[#B8966C]/10'
+              }`}
+            >
+              {isUpdatingRsvp && rsvpChoice === 'attending' ? 'Updating...' : 'Attending'}
+            </button>
+
+            <button
+              disabled={isUpdatingRsvp}
+              onClick={() => handleRsvpChange('declined')}
+              className={`w-full py-4 px-6 rounded-full text-[11px] font-sans font-semibold uppercase tracking-[0.25em] transition-all duration-300 shadow-md active:scale-95 ${
+                rsvpChoice === 'declined'
+                  ? 'bg-[#8C7A6B] text-white ring-4 ring-[#8C7A6B]/20 scale-105'
+                  : 'bg-white border border-[#8C7A6B]/50 text-[#7A685A] hover:bg-[#8C7A6B]/10'
+              }`}
+            >
+              {isUpdatingRsvp && rsvpChoice === 'declined' ? 'Updating...' : 'Cannot Attend'}
+            </button>
+          </div>
+
+          {rsvpChoice === 'attending' && (
+            <div className="w-full max-w-md p-8 rounded-3xl bg-white/80 border border-[#B8966C]/40 shadow-xl space-y-3 backdrop-blur-sm">
+              <span className="text-3xl">✨</span>
+              <h3 className="text-xl font-serif text-[#B8966C] italic font-medium">
+                We are happy you are joining us!
+              </h3>
+              <p className="text-xs sm:text-sm font-serif text-[#6B5B50] leading-relaxed">
+                Thank you, <span className="font-semibold text-[#5C4D43]">{guestTitle} {guestName}</span>. Your presence will make our celebration complete and truly memorable.
+              </p>
+            </div>
+          )}
+
+          {rsvpChoice === 'declined' && (
+            <div className="w-full max-w-md p-8 rounded-3xl bg-white/80 border border-[#8C7A6B]/40 shadow-xl space-y-3 backdrop-blur-sm">
+              <span className="text-3xl">🌸</span>
+              <h3 className="text-xl font-serif text-[#8C7A6B] italic font-medium">
+                We will miss you!
+              </h3>
+              <p className="text-xs sm:text-sm font-serif text-[#6B5B50] leading-relaxed">
+                Dear <span className="font-semibold text-[#5C4D43]">{guestTitle} {guestName}</span>, we are sad you won't be able to make it, but we deeply appreciate your warm wishes and blessings from afar.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ==================== 9. FAMILY MEMBERS SECTION ==================== */}
+      {familyMembers.length > 0 && (
+        <section className="relative w-full bg-[#F3ECE4] py-20 px-6 border-b border-[#E3D7C9]">
+          <div className="w-full max-w-2xl mx-auto flex flex-col items-center text-center space-y-12">
+            <div className="space-y-3 w-full flex flex-col items-center">
+              <h2 className="text-base sm:text-lg font-serif uppercase tracking-[0.45em] text-[#5C4D43] font-medium">
+                HONORED FAMILY MEMBERS
+              </h2>
+              <img src={IMAGES.DIVIDER} alt="Divider" className="w-40 h-auto opacity-70" />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-6 w-full">
+              {familyMembers.map((member) => (
+                <div
+                  key={member.id}
+                  className="group flex flex-col items-center p-4 rounded-3xl bg-white/60 border border-[#EADFCF] shadow-sm hover:shadow-xl hover:border-[#B8966C]/50 transition-all duration-300 backdrop-blur-sm"
+                >
+                  {member.profile_image && (
+                    <div className="relative w-24 h-28 sm:w-28 sm:h-32 rounded-t-full border border-[#D8C8B8] p-1 bg-[#F3ECE4] overflow-hidden mb-3 shadow-inner">
+                      <img
+                        src={member.profile_image}
+                        alt={member.name}
+                        className="w-full h-full object-cover rounded-t-full group-hover:scale-110 transition-transform duration-500"
                       />
                     </div>
-
-                    <div className="absolute top-6 inset-x-0 z-20 text-center px-4 pointer-events-none">
-                      <span
-                        className={`text-[9px] uppercase tracking-[0.3em] ${colors.text} font-bold bg-black/70 px-5 py-2 rounded-full border ${colors.border} backdrop-blur-md shadow-2xl inline-block`}
-                      >
-                        <span className="opacity-60">Celebration</span>{' '}
-                        {String(idx + 1).padStart(2, '0')}{' '}
-                        <span className="opacity-60">•</span> {event.name}
-                      </span>
-                    </div>
-
-                    <div className="absolute bottom-8 inset-x-0 z-20 text-center px-4 pointer-events-none">
-                      {isPlayingThis && !isWatched ? (
-                        <p className="text-[9px] uppercase tracking-[0.3em] text-white/60 font-semibold animate-pulse">
-                          ✦ Scroll freely • Details unlock when video ends ✦
-                        </p>
-                      ) : !isWatched ? (
-                        <p className="text-[9px] uppercase tracking-[0.3em] text-white/40 font-semibold animate-pulse">
-                          ✦ Scroll to play next event ✦
-                        </p>
-                      ) : null}
-                    </div>
-
-                    {isWatched && (
-                      <div className="absolute bottom-0 inset-x-0 z-40 p-5 bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-fade-in max-w-md mx-auto w-full max-h-[85vh] overflow-y-auto">
-                        <span
-                          className={`text-[9px] uppercase tracking-widest ${colors.text} font-bold ${colors.bg} px-3 py-1 rounded-full border ${colors.border} inline-block mb-3`}
-                        >
-                          ✓ {event.name} Details Unlocked
-                        </span>
-
-                        <h3 className="text-lg font-serif text-white mb-3">
-                          {event.emoji} {event.name}
-                        </h3>
-
-                        <div className="space-y-2 bg-white/5 p-3.5 rounded-2xl border border-white/10 mb-3">
-                          <p className="text-xs text-zinc-200">
-                            📅{' '}
-                            <strong className="text-white">
-                              {formatDate(event.date)}
-                            </strong>
-                            {event.time && (
-                              <>
-                                {' '}
-                                | ⏰{' '}
-                                <strong className="text-white">{event.time}</strong>
-                              </>
-                            )}
-                          </p>
-                          {event.venue && (
-                            <p className="text-xs text-zinc-300">
-                              📍 {event.venue}
-                            </p>
-                          )}
-                        </div>
-
-                        {event.ayat && (
-                          <div
-                            className={`relative p-4 rounded-2xl ${colors.bg} border ${colors.border} mb-3 overflow-hidden`}
-                          >
-                            <div
-                              className={`absolute top-0 right-0 w-16 h-16 ${colors.bg} rounded-full blur-2xl opacity-50`}
-                            ></div>
-
-                            <div className="relative z-10">
-                              <p className="text-[9px] uppercase tracking-widest text-white/60 font-bold mb-2 flex items-center gap-1.5">
-                                <span>🕌</span> Blessing
-                              </p>
-
-                              <p
-                                className="text-right text-base sm:text-lg text-white font-serif leading-loose mb-3"
-                                dir="rtl"
-                                style={{
-                                  fontFamily:
-                                    '"Amiri", "Traditional Arabic", serif',
-                                }}
-                              >
-                                {event.ayat.arabic}
-                              </p>
-
-                              <p className="text-[10px] italic text-white/80 leading-relaxed mb-1">
-                                &quot;{event.ayat.translation}&quot;
-                              </p>
-
-                              <p
-                                className={`text-[9px] font-bold ${colors.textLight} text-right`}
-                              >
-                                — {event.ayat.reference}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="flex gap-2.5">
-                          {event.date && (
-                            <a
-                              href={generateCalendarLink(
-                                `${event.name} - ${groomName} & ${brideName}`,
-                                event.date,
-                                event.time,
-                                event.venue
-                              )}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-1 py-3 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] uppercase tracking-wider font-bold text-white text-center flex items-center justify-center gap-1.5"
-                            >
-                              <span>📅</span> Calendar
-                            </a>
-                          )}
-                          {event.mapLink && (
-                            <a
-                              href={event.mapLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`flex-1 py-3 px-3 ${colors.bg} ${colors.bgHover} border ${colors.borderBtn} rounded-2xl text-[10px] uppercase tracking-wider font-bold ${colors.textLight} text-center flex items-center justify-center gap-1.5`}
-                            >
-                              <span>🗺️</span> Open Map
-                            </a>
-                          )}
-                        </div>
-
-                        <p className="text-center text-[10px] text-zinc-400 mt-4 uppercase tracking-widest animate-pulse">
-                          {idx < events.length - 1
-                            ? 'Scroll down for next event ↓'
-                            : 'Scroll down to RSVP ↓'}
-                        </p>
-                      </div>
-                    )}
-                  </section>
-                );
-              })
-            )}
-          </div>
-
-          {/* ==================== FAMILY SECTION ==================== */}
-          {hasFamilyMembers && (
-            <div id="family" className="w-full max-w-md mx-auto px-4 py-12">
-              <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 shadow-2xl">
-                {(groomImage || brideImage) && (
-                  <div className="flex items-center justify-center gap-4 mb-6 pb-6 border-b border-white/10">
-                    {groomImage && (
-                      <div className="text-center">
-                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
-                          <img
-                            src={groomImage}
-                            alt={groomName}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        </div>
-                        <p className="text-xs font-semibold text-white capitalize">
-                          {groomName}
-                        </p>
-                        <p className="text-[9px] text-rose-300 uppercase tracking-widest">
-                          Groom
-                        </p>
-                      </div>
-                    )}
-
-                    <span className="text-2xl text-rose-400 font-serif">&</span>
-
-                    {brideImage && (
-                      <div className="text-center">
-                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-400/40 shadow-lg mb-2">
-                          <img
-                            src={brideImage}
-                            alt={brideName}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        </div>
-                        <p className="text-xs font-semibold text-white capitalize">
-                          {brideName}
-                        </p>
-                        <p className="text-[9px] text-rose-300 uppercase tracking-widest">
-                          Bride
-                        </p>
-                      </div>
+                  )}
+                  <div className="text-center space-y-1 w-full">
+                    <h4 className="text-xs sm:text-sm font-serif font-semibold text-[#5C4D43] leading-tight truncate">
+                      {member.name}
+                    </h4>
+                    {member.role && (
+                      <p className="text-[10px] sm:text-xs font-serif text-[#8C7A6B] italic truncate">
+                        {member.role}
+                      </p>
                     )}
                   </div>
-                )}
-
-                <div className="text-center mb-6">
-                  <h3 className="text-xl font-serif text-white mb-1">Our Family</h3>
-                  <p className="text-xs text-zinc-400">
-                    The people who make it special
-                  </p>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {familyMembers.map((member: FamilyMember) => (
-                    <div
-                      key={member.id}
-                      className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/10 text-center"
-                    >
-                      {member.profile_image ? (
-                        <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-rose-400/30 mb-2">
-                          <img
-                            src={member.profile_image}
-                            alt={member.name}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-rose-500/30 to-pink-600/30 border-2 border-rose-400/30 flex items-center justify-center mb-2">
-                          <span className="text-lg font-bold text-rose-200">
-                            {member.name?.charAt(0).toUpperCase() || '?'}
-                          </span>
-                        </div>
-                      )}
-
-                      <p className="text-xs font-semibold text-white truncate w-full capitalize">
-                        {member.name}
-                      </p>
-                      {member.role && (
-                        <p className="text-[9px] text-rose-300 uppercase tracking-widest mt-0.5">
-                          {member.role}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ==================== CONTACTS ==================== */}
-          {(wedding.contact_person_1 || wedding.contact_person_2) && (
-            <div className="w-full max-w-md mx-auto px-4 py-8">
-              <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
-                <h3 className="text-xl font-serif text-white mb-1">Contact Us</h3>
-                <p className="text-xs text-zinc-400 mb-4">
-                  Reach out for any assistance
-                </p>
-
-                <div className="space-y-3">
-                  {wedding.contact_person_1 && wedding.contact_number_1 && (
-                    <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                      <p className="text-[10px] uppercase tracking-widest text-rose-300 font-semibold mb-1">
-                        {wedding.contact_person_1}
-                      </p>
-                      <a
-                        href={`tel:${wedding.contact_number_1}`}
-                        className="text-sm font-bold text-white hover:text-rose-300 transition-colors"
-                      >
-                        📞 {wedding.contact_number_1}
-                      </a>
-                    </div>
-                  )}
-
-                  {wedding.contact_person_2 && wedding.contact_number_2 && (
-                    <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                      <p className="text-[10px] uppercase tracking-widest text-rose-300 font-semibold mb-1">
-                        {wedding.contact_person_2}
-                      </p>
-                      <a
-                        href={`tel:${wedding.contact_number_2}`}
-                        className="text-sm font-bold text-white hover:text-rose-300 transition-colors"
-                      >
-                        📞 {wedding.contact_number_2}
-                      </a>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ==================== RSVP SECTION ==================== */}
-          <div id="rsvp" className="w-full max-w-md mx-auto px-4 py-4 mb-16">
-            <div className="bg-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl border border-white/15 text-center shadow-2xl">
-              <div
-                className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rsvpMessage.gradient} border ${rsvpMessage.border} p-5 mb-5`}
-              >
-                <div className="text-4xl mb-2">{rsvpMessage.emoji}</div>
-                <h3
-                  className={`text-lg font-serif ${rsvpMessage.textColor} mb-0.5`}
-                >
-                  {rsvpMessage.title}
-                </h3>
-                <p className="text-[10px] uppercase tracking-widest text-white/60 mb-3">
-                  {rsvpMessage.subtitle}
-                </p>
-                <p className="text-[11px] text-zinc-200 leading-relaxed italic">
-                  {rsvpMessage.message}
-                </p>
-
-                {rsvpStatus === 'attending' && (
-                  <p
-                    className="text-[10px] text-emerald-300/80 mt-3 font-serif"
-                    dir="rtl"
-                  >
-                    بَارَكَ اللَّهُ لَكُمْ وَبَارَكَ عَلَيْكُمْ
-                  </p>
-                )}
-
-                {rsvpStatus === 'not_attending' && (
-                  <p
-                    className="text-[10px] text-rose-300/80 mt-3 font-serif"
-                    dir="rtl"
-                  >
-                    جَزَاكَ اللَّهُ خَيْرًا
-                  </p>
-                )}
-              </div>
-
-              {rsvpStatus === 'pending' && (
-                <>
-                  <h3 className="text-base font-serif text-white mb-1">
-                    Confirm Attendance
-                  </h3>
-                  <p className="text-xs text-zinc-400 mb-5">
-                    {`Please respond to help us arrange your seat${
-                      allowedGuests > 1 ? ` for ${allowedGuests} guests` : ''
-                    }`}
-                  </p>
-
-                  <div className="space-y-3">
-                    <button
-                      onClick={() => handleRsvpSubmit('attending')}
-                      disabled={isSubmitting}
-                      className="w-full py-4 rounded-2xl text-xs uppercase tracking-[0.2em] font-bold transition-all shadow-lg active:scale-98 bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30"
-                    >
-                      {isSubmitting ? '...' : '✓ Accept Invitation'}
-                    </button>
-
-                    <button
-                      onClick={() => handleRsvpSubmit('not_attending')}
-                      disabled={isSubmitting}
-                      className="w-full py-4 rounded-2xl text-xs uppercase tracking-[0.2em] font-bold transition-all shadow-sm active:scale-98 bg-rose-500/20 text-rose-200 border border-rose-500/40 hover:bg-rose-500/30"
-                    >
-                      {isSubmitting ? '...' : '✗ Regretfully Decline'}
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {rsvpStatus !== 'pending' && (
-                <button
-                  onClick={() => setRsvpStatus('pending')}
-                  className="text-[10px] text-zinc-400 hover:text-zinc-200 underline uppercase tracking-widest transition-colors"
-                >
-                  Change my response
-                </button>
-              )}
+              ))}
             </div>
           </div>
-
-          {/* ==================== FOOTER ==================== */}
-          <footer className="relative z-10 text-center py-8 px-6 border-t border-white/10 bg-black/60 mb-16">
-            <p className="text-[11px] text-zinc-400 font-medium capitalize">
-              {groomName} & {brideName} • {new Date().getFullYear()}
-            </p>
-            <p className="text-[10px] text-rose-300 font-semibold mt-1 flex items-center justify-center gap-1">
-              <span>Made with</span>{' '}
-              <span className="text-rose-400 animate-pulse">❤️</span>{' '}
-              <span>for Loved Ones</span>
-            </p>
-          </footer>
-
-          {/* ==================== BOTTOM NAV ==================== */}
-          <div className="fixed bottom-0 inset-x-0 z-50 p-3 bg-black/80 backdrop-blur-2xl border-t border-white/15 max-w-md mx-auto flex items-center justify-around shadow-2xl">
-            <button
-              onClick={() => scrollToSection('home')}
-              className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-                activeTab === 'home'
-                  ? 'text-rose-400 bg-white/10'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <span className="text-base">🏠</span>
-              <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-                Home
-              </span>
-            </button>
-
-            <button
-              onClick={() => scrollToSection('events')}
-              className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-                activeTab === 'events'
-                  ? 'text-rose-400 bg-white/10'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <span className="text-base">🎥</span>
-              <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-                Events
-              </span>
-            </button>
-
-            {hasFamilyMembers && (
-              <button
-                onClick={() => scrollToSection('family')}
-                className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-                  activeTab === 'family'
-                    ? 'text-rose-400 bg-white/10'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <span className="text-base">👨‍👩‍👧</span>
-                <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-                  Family
-                </span>
-              </button>
-            )}
-
-            <button
-              onClick={() => scrollToSection('rsvp')}
-              className={`flex flex-col items-center py-1.5 px-3 rounded-2xl transition-all ${
-                activeTab === 'rsvp'
-                  ? 'text-rose-400 bg-white/10'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <span className="text-base">✨</span>
-              <span className="text-[9px] uppercase tracking-wider font-semibold mt-0.5">
-                RSVP
-              </span>
-            </button>
-          </div>
-        </>
+        </section>
       )}
+
+      {/* ==================== 10. FOOTER CLOSING SECTION ==================== */}
+      <section
+        className="relative w-full min-h-[500px] flex items-center justify-center bg-cover bg-center py-24 px-6 text-center font-serif overflow-hidden"
+        style={{
+          backgroundImage: `url('${IMAGES.FOOTER_BG}')`,
+        }}
+      >
+        <div className="absolute inset-0 bg-[#F3ECE4]/40 backdrop-blur-[1px]"></div>
+
+        <div className="relative z-10 w-full max-w-md mx-auto flex flex-col items-center space-y-6">
+          <h2 className="text-2xl sm:text-3xl font-serif italic text-[#7A685A] font-normal tracking-wide">
+            We look forward to seeing you.
+          </h2>
+
+          <img src={IMAGES.DIVIDER} alt="Divider" className="w-36 h-auto opacity-70" />
+
+          {formattedHeroDate && (
+            <p className="text-base sm:text-lg tracking-[0.35em] text-[#7A685A] font-serif font-light uppercase pt-1">
+              {formattedHeroDate}
+            </p>
+          )}
+
+          <div className="pt-2">
+            <img
+              src={IMAGES.KEY}
+              alt="Vintage Key"
+              className="w-24 sm:w-28 h-auto opacity-85 transition-transform duration-500 hover:scale-105"
+            />
+          </div>
+        </div>
+      </section>
+
     </main>
   );
 }
