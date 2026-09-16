@@ -188,7 +188,6 @@ export default function WeddingLandingPage({
       }
     }
 
-    // Filter based on guest invited_events if defined
     let filtered = list;
     if (guest?.invited_events && guest.invited_events.length > 0) {
       const allowed = guest.invited_events.map((i) => String(i).toLowerCase().trim());
@@ -202,12 +201,10 @@ export default function WeddingLandingPage({
       });
     }
 
-    // Fallback: If filter results in 0 events, display all available events
     if (filtered.length === 0) {
       filtered = list;
     }
 
-    // Sort chronologically by date
     return filtered.sort((a, b) => {
       const timeA = new Date(`${a.date || '9999-12-31'}T${a.time || '00:00'}`).getTime();
       const timeB = new Date(`${b.date || '9999-12-31'}T${b.time || '00:00'}`).getTime();
@@ -215,7 +212,7 @@ export default function WeddingLandingPage({
     });
   }, [wedding, guest?.invited_events]);
 
-  // Dynamic Hero Date (Earliest Invited Event)
+  // Dynamic Hero Date (Earliest Event)
   const firstEvent = invitedEvents[0];
   const targetDateStr = firstEvent?.date;
   const targetTimeStr = firstEvent?.time;
@@ -271,17 +268,15 @@ export default function WeddingLandingPage({
     return () => clearInterval(timer);
   }, [targetDateStr, targetTimeStr]);
 
-  // Handle Hero Video Autoplay Playback Trigger
   const handleUnlockAndPlay = () => {
     setStage('unlocked');
     if (heroVideoRef.current) {
       heroVideoRef.current.play().catch((err) => {
-        console.warn('Hero video autoplay blocked on mobile:', err);
+        console.warn('Hero video autoplay blocked:', err);
       });
     }
   };
 
-  // Real-time RSVP updates
   const handleRsvpChange = async (status: 'attending' | 'declined') => {
     setRsvpChoice(status);
     setIsUpdatingRsvp(true);
@@ -305,15 +300,17 @@ export default function WeddingLandingPage({
     }
   };
 
-  // Scroll Lock for Intro
+  // Fixed Scroll Lock Behavior to Avoid Sudden Page Jumps
   useEffect(() => {
-    const shouldLock = stage === 'intro';
-    document.body.style.overflow = shouldLock ? 'hidden' : 'auto';
-    document.documentElement.style.overflow = shouldLock ? 'hidden' : 'auto';
+    if (stage === 'intro') {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+      window.scrollTo(0, 0);
+    }
 
     return () => {
-      document.body.style.overflow = 'auto';
-      document.documentElement.style.overflow = 'auto';
+      document.body.style.overflow = '';
     };
   }, [stage]);
 
@@ -379,7 +376,7 @@ END:VCALENDAR`;
   };
 
   return (
-    <main className="relative w-full min-h-screen bg-[#F3ECE4] text-[#4A3E3D] overflow-x-hidden font-serif antialiased">
+    <main className="relative w-full min-h-screen bg-[#F3ECE4] text-[#4A3E3D] font-serif antialiased">
       
       {/* ==================== 1. INTRO GATE SECTION ==================== */}
       {stage === 'intro' && (
@@ -398,7 +395,7 @@ END:VCALENDAR`;
                   e.stopPropagation();
                   handleUnlockAndPlay();
                 }}
-                className="px-8 py-3.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#AA7C11] text-white text-[11px] font-semibold uppercase tracking-[0.25em] shadow-2xl active:scale-95 transition-transform"
+                className="px-8 py-3.5 rounded-full bg-gradient-to-r from-[#D4AF37] via-[#F4E8D1] to-[#AA7C11] text-[#2C221E] text-[11px] font-semibold uppercase tracking-[0.25em] shadow-2xl active:scale-95 transition-transform"
               >
                 Open Invitation
               </button>
@@ -416,20 +413,21 @@ END:VCALENDAR`;
             />
           )}
 
+          {/* Golden Themed Guest Intro Div */}
           <div className="absolute inset-x-4 bottom-10 z-50 pointer-events-none flex justify-center font-sans">
-            <div className="relative max-w-sm w-full bg-black/60 backdrop-blur-xl border border-[#D4AF37]/40 rounded-3xl px-6 py-4 text-center shadow-[0_20px_50px_rgba(0,0,0,0.8)] ring-1 ring-white/10">
-              <div className="flex items-center justify-center space-x-2 mb-1">
-                <span className="text-xs">✨</span>
-                <span className="text-[10px] uppercase tracking-[0.3em] text-[#D4AF37] font-bold">
+            <div className="relative max-w-sm w-full bg-gradient-to-b from-[#2C241B]/80 to-[#1A140E]/90 backdrop-blur-xl border-2 border-[#D4AF37]/70 rounded-3xl px-6 py-5 text-center shadow-[0_10px_30px_rgba(212,175,55,0.25)] ring-1 ring-[#F4E8D1]/30">
+              <div className="flex items-center justify-center space-x-2 mb-1.5">
+                <span className="text-xs text-[#D4AF37]">✨</span>
+                <span className="text-[10px] uppercase tracking-[0.35em] text-[#E8D3A7] font-bold drop-shadow">
                   VIP Invitation For
                 </span>
-                <span className="text-xs">✨</span>
+                <span className="text-xs text-[#D4AF37]">✨</span>
               </div>
-              <h2 className="text-lg font-serif text-white font-normal tracking-wide capitalize truncate">
+              <h2 className="text-xl font-serif text-[#F4E8D1] font-normal tracking-wide capitalize truncate drop-shadow-md">
                 {guestTitle} {guestName}
               </h2>
               {!isPlaying && (
-                <p className="text-[10px] text-amber-200/90 font-light mt-1.5 tracking-widest uppercase animate-pulse">
+                <p className="text-[10px] text-[#D4AF37] font-medium mt-2 tracking-widest uppercase animate-pulse">
                   Tap screen to unlock
                 </p>
               )}
@@ -438,8 +436,8 @@ END:VCALENDAR`;
         </div>
       )}
 
-      {/* ==================== 2. HERO SECTION ==================== */}
-      <section id="home" className="relative w-full h-[100dvh] flex flex-col justify-end overflow-hidden">
+      {/* ==================== 2. HERO SECTION (Smooth Scroll Fix) ==================== */}
+      <section id="home" className="relative w-full min-h-screen flex flex-col justify-end overflow-hidden">
         <div className="absolute inset-0 w-full h-full z-0 bg-[#12100E]">
           <video
             ref={heroVideoRef}
@@ -452,12 +450,12 @@ END:VCALENDAR`;
             preload="auto"
             poster={IMAGES.HERO_FALLBACK}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#12100E] via-[#12100E]/30 to-black/30"></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-[#12100E] via-[#12100E]/40 to-black/30"></div>
         </div>
 
-        <div className="relative z-10 w-full max-w-2xl mx-auto px-6 pb-12 pt-10 flex flex-col items-center justify-end text-center space-y-4 font-sans">
+        <div className="relative z-10 w-full max-w-2xl mx-auto px-6 pb-12 pt-20 flex flex-col items-center justify-end text-center space-y-4 font-sans">
           {guestName && (
-            <div className="inline-block bg-black/50 backdrop-blur-md border border-[#D4AF37]/40 rounded-full px-5 py-2 shadow-xl mb-1">
+            <div className="inline-block bg-[#1A140E]/80 backdrop-blur-md border border-[#D4AF37]/60 rounded-full px-6 py-2 shadow-xl mb-1">
               <p className="text-[10px] uppercase tracking-[0.3em] text-[#E8D3A7] font-medium">
                 Honorary Guest: {guestTitle} {guestName}
               </p>
